@@ -299,6 +299,28 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
+// Add this endpoint to get recent payments
+app.get('/api/recent-payments', async (req, res) => {
+    try {
+        const payments = await getPayments();
+        const recent = Object.entries(payments)
+            .map(([id, data]) => ({
+                paymentId: id,
+                timestamp: data.timestamp,
+                amount: data.amount
+            }))
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            .slice(0, 5); // Last 5 payments
+        
+        res.json({
+            count: recent.length,
+            payments: recent
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Verify payment endpoint
 app.get('/verify/:paymentId', async (req, res) => {
     try {
