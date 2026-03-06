@@ -13,6 +13,13 @@ console.log('- DATA_DIR:', process.env.DATA_DIR ? `✅ Found (${process.env.DATA
 console.log('- NODE_ENV:', process.env.NODE_ENV);
 console.log('- RAILWAY_PUBLIC_DOMAIN:', process.env.RAILWAY_PUBLIC_DOMAIN ? '✅ Found' : '❌ Missing');
 
+// Also check if variables are accessible
+if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
+    console.log('⚠️ WARNING: RAZORPAY_WEBHOOK_SECRET is not set!');
+} else {
+    console.log('✅ RAZORPAY_WEBHOOK_SECRET is set (hidden)');
+}
+
 // Configuration with defaults
 const PORT = process.env.PORT || 3000;
 const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
@@ -256,6 +263,7 @@ app.get('/verify/:paymentId', async (req, res) => {
         const payments = await loadPayments();
         
         await ensureWritableFile();
+        console.log(`📁 Current PAYMENTS_FILE: ${PAYMENTS_FILE}`);
         const payment = payments[paymentId];
         if (payment) {
             res.json({
@@ -295,6 +303,7 @@ app.get('/admin/payments', async (req, res) => {
         
         const payments = await loadPayments();
         await ensureWritableFile();
+        console.log(`📁 Current PAYMENTS_FILE: ${PAYMENTS_FILE}`);
         const paymentsList = Object.entries(payments)
             .map(([id, data]) => ({
                 paymentId: id,
@@ -319,6 +328,7 @@ app.get('/health', async (req, res) => {
     try {
         const payments = await loadPayments();
         await ensureWritableFile();
+        console.log(`📁 Current PAYMENTS_FILE: ${PAYMENTS_FILE}`);
         const uptime = process.uptime();
         
         // Check file system
@@ -386,11 +396,24 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 // Initialize and start server
 async function startServer() {
     try {
+        // Force /tmp if writable is false
+        try {
+            await fs.access('/tmp', fs.constants.W_OK);
+            PAYMENTS_FILE = '/tmp/payments.json';
+            LOG_FILE = '/tmp/webhook.log';
+            console.log(`📁 Using /tmp for storage`);
+        } catch (e) {
+            console.error('❌ Even /tmp is not writable!');
+        }        
+        
         // Ensure directories exist
         await ensureDirectories();
         
         // Load existing payments on startup
         const payments = await loadPayments();
+        await ensureWritableFile();
+        console.log(`📁 Current PAYMENTS_FILE: ${PAYMENTS_FILE}`);
+
         console.log(`✅ Loaded ${Object.keys(payments).length} existing payments`);
         
         // Start server
