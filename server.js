@@ -6,11 +6,20 @@ const crypto = require('crypto');
 const app = express();
 app.use(express.json({ limit: '1mb' })); // Limit payload size
 
+// Debug all relevant environment variables
+console.log('🔍 ENVIRONMENT VARIABLES DEBUG:');
+console.log('- RAZORPAY_WEBHOOK_SECRET:', process.env.RAZORPAY_WEBHOOK_SECRET ? '✅ Found' : '❌ Missing');
+console.log('- DATA_DIR:', process.env.DATA_DIR ? `✅ Found (${process.env.DATA_DIR})` : '❌ Missing');
+console.log('- NODE_ENV:', process.env.NODE_ENV);
+console.log('- RAILWAY_PUBLIC_DOMAIN:', process.env.RAILWAY_PUBLIC_DOMAIN ? '✅ Found' : '❌ Missing');
+
 // Configuration with defaults
 const PORT = process.env.PORT || 3000;
 const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
-const PAYMENTS_FILE = path.join(__dirname, 'payments.json');
-const LOG_FILE = path.join(__dirname, 'webhook.log');
+const DATA_DIR = process.env.DATA_DIR || '/tmp';
+let PAYMENTS_FILE = path.join(DATA_DIR, 'payments.json');
+let LOG_FILE = path.join(DATA_DIR, 'webhook.log');
+
 const MAX_PAYMENTS = 10000; // Prevent unlimited file growth
 
 // Ensure directories exist
@@ -19,6 +28,19 @@ async function ensureDirectories() {
         await fs.mkdir(path.dirname(PAYMENTS_FILE), { recursive: true });
     } catch (error) {
         // Directory probably exists
+    }
+}
+
+// Add this helper function
+async function ensureWritableFile() {
+    try {
+        await fs.access(path.dirname(PAYMENTS_FILE), fs.constants.W_OK);
+        return true;
+    } catch {
+        console.log('⚠️ Switching to /tmp for file storage');
+        PAYMENTS_FILE = '/tmp/payments.json';
+        LOG_FILE = '/tmp/webhook.log';
+        return false;
     }
 }
 
@@ -173,7 +195,7 @@ app.post('/webhook', async (req, res) => {
         
         console.log(`📨 Webhook received: ${event} for ${paymentId}`);
         console.log(`[${requestId}] Payment ${paymentId}`);
-        
+
         // 4. Extract payment details
         const paymentData = {
             event,
@@ -232,8 +254,9 @@ app.get('/verify/:paymentId', async (req, res) => {
         }
         
         const payments = await loadPayments();
-        const payment = payments[paymentId];
         
+        await ensureWritableFile();
+        const payment = payments[paymentId];
         if (payment) {
             res.json({
                 valid: true,
@@ -271,6 +294,7 @@ app.get('/admin/payments', async (req, res) => {
         }
         
         const payments = await loadPayments();
+        await ensureWritableFile();
         const paymentsList = Object.entries(payments)
             .map(([id, data]) => ({
                 paymentId: id,
@@ -294,6 +318,7 @@ app.get('/admin/payments', async (req, res) => {
 app.get('/health', async (req, res) => {
     try {
         const payments = await loadPayments();
+        await ensureWritableFile();
         const uptime = process.uptime();
         
         // Check file system
