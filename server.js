@@ -55,7 +55,10 @@ const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
 const DATA_DIR = process.env.DATA_DIR || '/tmp';
 let PAYMENTS_FILE = path.join(DATA_DIR, 'payments.json');
 let LOG_FILE = path.join(DATA_DIR, 'webhook.log');
-
+// Add this near the top with other variables
+let paymentsCache = null;  // In-memory cache
+let lastCacheUpdate = 0;
+const CACHE_TTL = 60000; // 60 seconds
 const MAX_PAYMENTS = 10000; // Prevent unlimited file growth
 
 // Ensure directories exist
@@ -101,12 +104,32 @@ async function loadPayments() {
         return {};
     }
 }
+// Modified loadPayments to use cache
+async function getPayments(forceRefresh = false) {
+    const now = Date.now();
+    
+    // Use cache if it's fresh
+    if (!forceRefresh && paymentsCache && (now - lastCacheUpdate < CACHE_TTL)) {
+        console.log('📋 Using cached payments');
+        return paymentsCache;
+    }
+    
+    // Load from file
+    console.log('📂 Loading payments from disk');
+    const payments = await loadPayments(); // Your existing function
+    
+    // Update cache
+    paymentsCache = payments;
+    lastCacheUpdate = now;
+    
+    return payments;
+}
 
 // Save payment with atomic write
 async function savePayment(paymentId, paymentData) {
     try {
-        // Load current payments
-        const payments = await loadPayments();
+        // Load current payments (bypass cache to get latest)
+        const payments = await getPayments(true); // Force refresh
         
         // Prevent unlimited growth
         if (Object.keys(payments).length >= MAX_PAYMENTS) {
@@ -330,7 +353,8 @@ app.get('/admin/payments', async (req, res) => {
             return res.status(401).json({ error: 'Unauthorized' });
         }
         
-        const payments = await loadPayments();
+        // Admin endpoint - use cache
+        const payments = await getPayments();
         await ensureWritableFile();
         console.log(`📁 Current PAYMENTS_FILE: ${PAYMENTS_FILE}`);
         const paymentsList = Object.entries(payments)
@@ -355,7 +379,8 @@ app.get('/admin/payments', async (req, res) => {
 // Health check with system info
 app.get('/health', async (req, res) => {
     try {
-        const payments = await loadPayments();
+        // Health check - use cache
+        const payments = await getPayments();
         await ensureWritableFile();
         console.log(`📁 Current PAYMENTS_FILE: ${PAYMENTS_FILE}`);
         const uptime = process.uptime();
