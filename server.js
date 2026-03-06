@@ -6,6 +6,35 @@ const crypto = require('crypto');
 const app = express();
 app.use(express.json({ limit: '1mb' })); // Limit payload size
 
+const cors = require('cors');
+
+// Enable CORS for all routes
+// app.use(cors());
+
+// Or more specifically, allow only your GitHub domain
+// Get allowed origins from environment variable
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
+    : ['https://manuraj7070.github.io']; // Fallback
+
+console.log('🔓 Allowed CORS origins:', allowedOrigins);
+
+app.use(cors({
+    origin: function(origin, callback) {
+        // Allow requests with no origin (like mobile apps, curl)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.log('❌ Blocked CORS from:', origin);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type']
+}));
+
 // Debug all relevant environment variables
 console.log('🔍 ENVIRONMENT VARIABLES DEBUG:');
 console.log('- RAZORPAY_WEBHOOK_SECRET:', process.env.RAZORPAY_WEBHOOK_SECRET ? '✅ Found' : '❌ Missing');
