@@ -281,7 +281,7 @@ app.post('/webhook', async (req, res) => {
         // 1. Basic request validation
         if (!req.body) {
             console.log('❌ Empty webhook body');
-            return res.status(400).json({ error: 'Empty body' });
+            return res.redirect('https://pay.innershiftnirvaana.space/');
         }
         
 
@@ -290,12 +290,12 @@ app.post('/webhook', async (req, res) => {
         if (WEBHOOK_SECRET) {
             if (!signature) {
                 console.log('❌ Missing signature header');
-                return res.status(401).json({ error: 'Missing signature' });
+                return res.redirect('https://pay.innershiftnirvaana.space/');
             }
             
             if (!verifySignature(req.body, signature)) {
                 console.log('❌ Invalid signature');
-                return res.status(401).json({ error: 'Invalid signature' });
+                return res.redirect('https://pay.innershiftnirvaana.space/');
             }
             console.log('✅ Signature verified');
         }
@@ -304,7 +304,7 @@ app.post('/webhook', async (req, res) => {
         const validation = validateWebhookPayload(req.body);
         if (!validation.valid) {
             console.log('❌ Invalid payload:', validation.error);
-            return res.status(400).json({ error: validation.error });
+            return res.redirect('https://pay.innershiftnirvaana.space/');
         }
         
         const paymentId = validation.paymentId;
@@ -316,17 +316,61 @@ app.post('/webhook', async (req, res) => {
 
         payment_success_paymentId = paymentId;
 
-        // 4. Extract payment details
+        // 4. Extract ALL payment details
+        const payment = req.body.payload?.payment?.entity || {};
+        const notes = payment.notes || {};
+        const acquirerData = payment.acquirer_data || {};
+
         const paymentData = {
+            // Basic payment info
             event,
             paymentId,
-            amount: req.body.payload?.payment?.entity?.amount,
-            currency: req.body.payload?.payment?.entity?.currency,
-            status: req.body.payload?.payment?.entity?.status,
-            method: req.body.payload?.payment?.entity?.method,
-            orderId: req.body.payload?.payment?.entity?.order_id,
-            rawData: process.env.NODE_ENV === 'development' ? req.body : undefined
+            amount: payment.amount,
+            currency: payment.currency,
+            status: payment.status,
+            method: payment.method,
+            orderId: payment.order_id,
+            
+            // Customer contact info
+            email: notes.email || payment.email || notes.customer_email || 'N/A',
+            phone: notes.contact || payment.contact || notes.customer_phone || 'N/A',
+            customer_name: notes.customer_name || 'N/A',
+            
+            // Bank transaction details
+            bank_rrn: acquirerData.rrn || payment.rrn || 'N/A',
+            bank_transaction_id: acquirerData.bank_transaction_id || 'N/A',
+            bank_name: acquirerData.bank_name || 'N/A',
+            ifsc: acquirerData.ifsc || 'N/A',
+            
+            // UPI specific
+            vpa: acquirerData.vpa || 'N/A',
+            
+            // Card specific
+            card_id: payment.card_id || 'N/A',
+            card_last4: payment.card?.last4 || 'N/A',
+            card_network: payment.card?.network || 'N/A',
+            card_type: payment.card?.type || 'N/A',
+            
+            // Additional metadata
+            description: payment.description || 'N/A',
+            fee: payment.fee,
+            tax: payment.tax,
+            
+            // Raw data for debugging (only in development)
+            rawData: process.env.NODE_ENV === 'development' ? req.body : undefined,
+            
+            // Timestamps
+            created_at: payment.created_at,
+            captured_at: payment.captured_at,
+            receivedAt: new Date().toISOString()
         };
+
+        // Log extracted details
+        console.log(`📧 Customer email: ${paymentData.email}`);
+        console.log(`📱 Customer phone: ${paymentData.phone}`);
+        console.log(`🏦 Bank RRN: ${paymentData.bank_rrn}`);
+        console.log(`🆔 Order ID: ${paymentData.orderId}`);
+
         
         // 5. Save to persistent storage
         const saved = await savePayment(paymentId, paymentData);
@@ -347,12 +391,9 @@ app.post('/webhook', async (req, res) => {
             console.error('❌ Webhook error:', error.message);
             console.error(error.stack);
             
-            // Always return 200 to prevent Razorpay retries
-            res.status(200).json({ 
-                received: true, 
-                error: error.message,
-                note: 'Payment received but processing failed'
-            });
+            // ✅ On any error, redirect to home page without PID
+            console.log('🔄 Redirecting to home page due to error');
+            return res.redirect('https://pay.innershiftnirvaana.space/');
         }
 });
 
