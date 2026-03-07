@@ -363,17 +363,12 @@ app.get('/payment-success', (req, res) => {
     console.log(`📨 Payment success page accessed with ID: ${payment_success_paymentId}`);
     
 
-    // If no ID in URL, try to get the most recent one from the database
-    if (!paymentId) {
-        console.log('⚠️ No ID in URL, checking recent payments...');
-        const payments = await getPayments();
-        const recentPayments = Object.entries(payments)
-            .sort((a, b) => new Date(b[1].timestamp) - new Date(a[1].timestamp));
-
-        if (recentPayments.length > 0) {
-            paymentId = recentPayments[0][0];
-            console.log(`✅ Using most recent payment ID from DB: ${paymentId}`);
-        }
+    if (paymentId) {
+        // Redirect to your frontend with the ID in the URL
+        return res.redirect(`https://pay.innershiftnirvaana.space/?pid=${paymentId}`);
+    } else {
+        // No ID? Redirect to the main page (it will show the error)
+        return res.redirect('https://pay.innershiftnirvaana.space/');
     }
     
     res.send(html);
