@@ -160,7 +160,7 @@ async function getPayments(forceRefresh = false) {
 async function syncToGitHub() {
     try {
         // Only sync if we have changes
-        const status = await git.status();
+        const status = await git.status(); 
         
         if (status.files.length > 0) {
             console.log('📤 Syncing payments to GitHub...');
