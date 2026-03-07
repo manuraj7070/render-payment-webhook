@@ -89,7 +89,7 @@ let paymentsCache = null;  // In-memory cache
 let lastCacheUpdate = 0;
 const CACHE_TTL = 60000; // 60 seconds
 const MAX_PAYMENTS = 10000; // Prevent unlimited file growth
-let payment_success_paymentId = null;
+//let payment_success_paymentId = null;
 
 // Ensure directories exist
 async function ensureDirectories() {
@@ -314,7 +314,7 @@ app.post('/webhook', async (req, res) => {
         console.log(`📨 Webhook received: ${event} for ${paymentId}`);
         console.log(`[${requestId}] Payment ${paymentId}`);
 
-        payment_success_paymentId = paymentId;
+        //payment_success_paymentId = paymentId;
 
         // 4. Extract ALL payment details
         const payment = req.body.payload?.payment?.entity || {};
@@ -397,8 +397,37 @@ app.post('/webhook', async (req, res) => {
         }
 });
 
-// NEW: Endpoint for the user's browser to land on after payment
+app.post('/payment-success', async (req, res) => {
+    try {
+        const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
+        
+        if (!razorpay_payment_id) {
+            return res.redirect('https://pay.innershiftnirvaana.space/');
+        }
+        
+        // Verify signature if you have the secret
+        if (process.env.RAZORPAY_WEBHOOK_SECRET) {
+            const generatedSignature = crypto
+                .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
+                .update(razorpay_order_id + "|" + razorpay_payment_id)
+                .digest('hex');
+                
+            if (generatedSignature !== razorpay_signature) {
+                console.log('❌ Invalid signature');
+                return res.redirect('https://pay.innershiftnirvaana.space/');
+            }
+            console.log('✅ Signature verified');
+        }
+        
+        return res.redirect(`https://pay.innershiftnirvaana.space/?pid=${razorpay_payment_id}`);
+        
+    } catch (error) {
+        console.error('❌ Error:', error);
+        return res.redirect('https://pay.innershiftnirvaana.space/');
+    }
+});
 
+/* // NEW: Endpoint for the user's browser to land on after payment
 app.get('/payment-success', (req, res) => {
     const paymentId = payment_success_paymentId;
     console.log(`📨 Payment success page accessed with ID: ${payment_success_paymentId}`);
@@ -411,7 +440,7 @@ app.get('/payment-success', (req, res) => {
         // No ID? Redirect to the main page (it will show the error)
         return res.redirect('https://pay.innershiftnirvaana.space/');
     }
-});
+}); */
 
 // Add this endpoint to get recent payments
 // Replace your recent-payments endpoint with:
