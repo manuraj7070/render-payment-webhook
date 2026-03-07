@@ -357,16 +357,11 @@ app.post('/webhook', async (req, res) => {
 });
 
 // NEW: Endpoint for the user's browser to land on after payment
-<<<<<<< HEAD
+
 app.get('/payment-success', (req, res) => {
     const paymentId = payment_success_paymentId;
     console.log(`📨 Payment success page accessed with ID: ${payment_success_paymentId}`);
     
-=======
-// Replace your current /payment-success endpoint with this:
-app.get('/payment-success', async (req, res) => {
-    let paymentId = req.query.razorpay_payment_id;
-    console.log(`📨 Payment success page accessed. ID from URL: ${paymentId}`);
 
     // If no ID in URL, try to get the most recent one from the database
     if (!paymentId) {
@@ -380,24 +375,7 @@ app.get('/payment-success', async (req, res) => {
             console.log(`✅ Using most recent payment ID from DB: ${paymentId}`);
         }
     }
-
-    // Read your existing index.html file
-    let html = await fs.readFile(path.join(__dirname, 'index.html'), 'utf8');
-
-    // Inject the payment ID into the HTML
->>>>>>> f17193511794f790e5ee11933f90ffae92b27755
-    if (paymentId) {
-        html = html.replace(
-            '<span id="payment-id-display">Loading...</span>',
-            `<span id="payment-id-display">${paymentId}</span>`
-        );
-        // Also inject it as a JavaScript variable for the frontend to use
-        html = html.replace(
-            '</head>',
-            `<script>window.LATEST_PAYMENT_ID = "${paymentId}";</script></head>`
-        );
-    }
-
+    
     res.send(html);
 });
 
