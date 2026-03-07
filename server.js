@@ -19,7 +19,8 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
     : [
         'https://manuraj7070.github.io',
         'https://innershiftnirvaana.space',
-        'https://*.googleusercontent.com'  // Allow all Google embed domains
+        'https://273353433-atari-embeds.googleusercontent.com',  // Add the exact origin
+        'https://1098652657-atari-embeds.googleusercontent.com'  // Add both variants
       ]; 
 
 console.log('🔓 Allowed CORS origins:', allowedOrigins);
@@ -320,24 +321,39 @@ app.post('/webhook', async (req, res) => {
 });
 
 // Add this endpoint to get recent payments
+// Replace your recent-payments endpoint with:
 app.get('/api/recent-payments', async (req, res) => {
     try {
+        console.log('📊 Recent payments requested');
         const payments = await getPayments();
+        
+        if (!payments) {
+            console.log('⚠️ No payments found');
+            return res.json({ count: 0, payments: [] });
+        }
+        
         const recent = Object.entries(payments)
             .map(([id, data]) => ({
                 paymentId: id,
-                timestamp: data.timestamp,
-                amount: data.amount
+                timestamp: data?.timestamp || new Date().toISOString(),
+                amount: data?.amount || 0
             }))
             .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-            .slice(0, 5); // Last 5 payments
+            .slice(0, 5);
         
+        console.log(`✅ Returning ${recent.length} recent payments`);
         res.json({
             count: recent.length,
             payments: recent
         });
     } catch (error) {
-        res.status(500).json({ error: error.message });
+        console.error('❌ Recent payments error:', error.message);
+        console.error(error.stack);
+        res.status(500).json({ 
+            error: error.message,
+            count: 0, 
+            payments: [] 
+        });
     }
 });
 
@@ -455,7 +471,23 @@ app.get('/health', async (req, res) => {
         });
     }
 });
-
+// Add this to check webhook status
+app.get('/diagnostic', async (req, res) => {
+    try {
+        const payments = await getPayments(true); // Force refresh
+        res.json({
+            status: 'ok',
+            time: new Date().toISOString(),
+            paymentsCount: Object.keys(payments).length,
+            paymentsExist: Object.keys(payments).length > 0,
+            cacheSize: paymentsCache ? Object.keys(paymentsCache).length : 0,
+            filePath: PAYMENTS_FILE,
+            nodeVersion: process.version
+        });
+    } catch (error) {
+        res.json({ status: 'error', error: error.message });
+    }
+});
 // Add this temporarily to check the file
 app.get('/debug/check-file', async (req, res) => {
     try {
