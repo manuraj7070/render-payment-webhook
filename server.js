@@ -337,7 +337,7 @@ app.post('/webhook', async (req, res) => {
 
         // ✅ FIX: Redirect to frontend with payment ID (instead of sending JSON)
         console.log(`🔄 Redirecting to frontend with payment ID: ${paymentId}`);
-        return res.redirect(`https://pay.innershiftnirvaana.space/?razorpay_payment_id=${paymentId}`);
+        return res.redirect(`https://pay.innershiftnirvaana.space/?pid=${paymentId}`);
 
         } catch (error) {
             console.error('❌ Webhook error:', error.message);
@@ -359,7 +359,7 @@ app.get('/payment-success', (req, res) => {
     
     if (paymentId) {
         // Redirect to your frontend with the ID in the URL
-        return res.redirect(`https://pay.innershiftnirvaana.space/?razorpay_payment_id=${paymentId}`);
+        return res.redirect(`https://pay.innershiftnirvaana.space/?pid=${paymentId}`);
     } else {
         // No ID? Redirect to the main page (it will show the error)
         return res.redirect('https://pay.innershiftnirvaana.space/');
@@ -375,6 +375,7 @@ app.get('/api/recent-payments', async (req, res) => {
         
         // Force refresh cache
         const payments = await getPayments(true);
+        console.log('📊 Payments object:', payments ? 'exists' : 'null');
         
         if (!payments) {
             console.log('⚠️ Payments is null/undefined');
@@ -384,6 +385,7 @@ app.get('/api/recent-payments', async (req, res) => {
         console.log(`📊 Total payments in cache: ${Object.keys(payments).length}`);
         
         const paymentsArray = Object.entries(payments);
+        console.log(`📊 Found ${paymentsArray.length} payments`);
         
         if (paymentsArray.length === 0) {
             console.log('📊 No payments found');
