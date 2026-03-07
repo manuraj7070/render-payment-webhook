@@ -2,6 +2,20 @@ const express = require('express');
 const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
+const simpleGit = require('simple-git');
+const path = require('path');
+const fs = require('fs').promises;
+
+// Initialize git with token
+const git = simpleGit({
+    baseDir: __dirname,
+    binary: 'git',
+    maxConcurrentProcesses: 1,
+}).env({
+    GIT_ASKPASS: 'echo',
+    GIT_USERNAME: 'manuraj7070',
+    GIT_PASSWORD: process.env.GITHUB_TOKEN
+});
 
 const app = express();
 app.use(express.json({ limit: '1mb' })); // Limit payload size
@@ -143,8 +157,28 @@ async function getPayments(forceRefresh = false) {
     
     return payments;
 }
-
+// GitHub sync function
+async function syncToGitHub() {t
+    try {
+        // Only sync if we have changes
+        const status = await git.status();
+        
+        if (status.files.length > 0) {
+            console.log('📤 Syncing payments to GitHub...');
+            
+            await git.add('./*.json');
+            await git.commit(`💾 Auto-sync payments - ${new Date().toISOString()}`);
+            await git.push('origin', 'main');
+            
+            console.log('✅ Successfully synced to GitHub');
+        }
+    } catch (error) {
+        console.error('❌ GitHub sync error:', error.message);
+        // Don't fail the payment if GitHub sync fails
+    }
+}
 // Save payment with atomic write
+// Save payment with atomic write and GitHub sync
 async function savePayment(paymentId, paymentData) {
     try {
         // Load current payments (bypass cache to get latest)
@@ -180,6 +214,9 @@ async function savePayment(paymentId, paymentData) {
         } catch (logError) {
             console.error('Log write failed (non-critical):', logError.message);
         }
+        
+        // Trigger GitHub sync in background (don't await)
+        syncToGitHub().catch(err => console.error('Background sync error:', err));
         
         return true;
     } catch (error) {
@@ -576,6 +613,15 @@ async function startServer() {
         } catch (e) {
             console.error('❌ /tmp is NOT writable:', e.message);
         }        
+
+        // Try to pull latest payments from GitHub
+        try {
+            console.log('🔄 Pulling latest payments from GitHub...');
+            await git.pull('origin', 'main');
+            console.log('✅ Synced with GitHub');
+        } catch (error) {
+            console.log('⚠️ Could not pull from GitHub:', error.message);
+        }
 
         // Ensure directories exist
         await ensureDirectories();
