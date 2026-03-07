@@ -13,9 +13,14 @@ const cors = require('cors');
 
 // Or more specifically, allow only your GitHub domain
 // Get allowed origins from environment variable
+// Get allowed origins from environment variable
 const allowedOrigins = process.env.ALLOWED_ORIGINS 
     ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
-    : ['https://manuraj7070.github.io']; // Fallback
+    : [
+        'https://manuraj7070.github.io',
+        'https://innershiftnirvaana.space',
+        'https://*.googleusercontent.com'  // Allow all Google embed domains
+      ]; 
 
 console.log('🔓 Allowed CORS origins:', allowedOrigins);
 
@@ -24,7 +29,17 @@ app.use(cors({
         // Allow requests with no origin (like mobile apps, curl)
         if (!origin) return callback(null, true);
         
-        if (allowedOrigins.indexOf(origin) !== -1) {
+        // Check if origin matches any allowed pattern
+        const isAllowed = allowedOrigins.some(allowed => {
+            if (allowed.includes('*')) {
+                // Handle wildcard domains like *.googleusercontent.com
+                const pattern = allowed.replace('*.', '');
+                return origin.includes(pattern);
+            }
+            return allowed === origin;
+        });
+        
+        if (isAllowed) {
             callback(null, true);
         } else {
             console.log('❌ Blocked CORS from:', origin);
