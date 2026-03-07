@@ -89,6 +89,7 @@ let paymentsCache = null;  // In-memory cache
 let lastCacheUpdate = 0;
 const CACHE_TTL = 60000; // 60 seconds
 const MAX_PAYMENTS = 10000; // Prevent unlimited file growth
+let payment_success_paymentId = null;
 
 // Ensure directories exist
 async function ensureDirectories() {
@@ -307,10 +308,13 @@ app.post('/webhook', async (req, res) => {
         }
         
         const paymentId = validation.paymentId;
+        
         const event = req.body.event || 'unknown';
         
         console.log(`📨 Webhook received: ${event} for ${paymentId}`);
         console.log(`[${requestId}] Payment ${paymentId}`);
+
+        payment_success_paymentId = paymentId;
 
         // 4. Extract payment details
         const paymentData = {
@@ -354,8 +358,8 @@ app.post('/webhook', async (req, res) => {
 
 // NEW: Endpoint for the user's browser to land on after payment
 app.get('/payment-success', (req, res) => {
-    const paymentId = req.query.razorpay_payment_id;
-    console.log(`📨 Payment success page accessed with ID: ${paymentId}`);
+    const paymentId = payment_success_paymentId;
+    console.log(`📨 Payment success page accessed with ID: ${payment_success_paymentId}`);
     
     if (paymentId) {
         // Redirect to your frontend with the ID in the URL
