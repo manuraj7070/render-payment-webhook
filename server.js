@@ -14,13 +14,14 @@ const cors = require('cors');
 // Or more specifically, allow only your GitHub domain
 // Get allowed origins from environment variable
 // Get allowed origins from environment variable
+// Get allowed origins - add the specific Google embed domain
 const allowedOrigins = process.env.ALLOWED_ORIGINS 
     ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
     : [
         'https://manuraj7070.github.io',
         'https://innershiftnirvaana.space',
-        'https://273353433-atari-embeds.googleusercontent.com',  // Add the exact origin
-        'https://1098652657-atari-embeds.googleusercontent.com'  // Add both variants
+        'https://588380366-atari-embeds.googleusercontent.com',  // Add the exact origin
+        'https://*.googleusercontent.com'  // Keep wildcard
       ]; 
 
 console.log('🔓 Allowed CORS origins:', allowedOrigins);
@@ -30,25 +31,22 @@ app.use(cors({
         // Allow requests with no origin (like mobile apps, curl)
         if (!origin) return callback(null, true);
         
-        // Check if origin matches any allowed pattern
-        const isAllowed = allowedOrigins.some(allowed => {
-            if (allowed.includes('*')) {
-                // Handle wildcard domains like *.googleusercontent.com
-                const pattern = allowed.replace('*.', '');
-                return origin.includes(pattern);
-            }
-            return allowed === origin;
-        });
-        
-        if (isAllowed) {
-            callback(null, true);
-        } else {
-            console.log('❌ Blocked CORS from:', origin);
-            callback(new Error('Not allowed by CORS'));
+        // Check exact match first
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
         }
+        
+        // Check wildcard for googleusercontent.com
+        if (origin.includes('googleusercontent.com')) {
+            return callback(null, true);
+        }
+        
+        console.log('❌ Blocked CORS from:', origin);
+        callback(new Error('Not allowed by CORS'));
     },
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type']
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type'],
+    credentials: true
 }));
 
 // Debug all relevant environment variables
@@ -325,14 +323,26 @@ app.post('/webhook', async (req, res) => {
 app.get('/api/recent-payments', async (req, res) => {
     try {
         console.log('📊 Recent payments requested');
-        const payments = await getPayments();
+        console.log('Origin:', req.headers.origin);
+        
+        // Force refresh cache
+        const payments = await getPayments(true);
         
         if (!payments) {
-            console.log('⚠️ No payments found');
+            console.log('⚠️ Payments is null/undefined');
             return res.json({ count: 0, payments: [] });
         }
         
-        const recent = Object.entries(payments)
+        console.log(`📊 Total payments in cache: ${Object.keys(payments).length}`);
+        
+        const paymentsArray = Object.entries(payments);
+        
+        if (paymentsArray.length === 0) {
+            console.log('📊 No payments found');
+            return res.json({ count: 0, payments: [] });
+        }
+        
+        const recent = paymentsArray
             .map(([id, data]) => ({
                 paymentId: id,
                 timestamp: data?.timestamp || new Date().toISOString(),
@@ -348,7 +358,7 @@ app.get('/api/recent-payments', async (req, res) => {
         });
     } catch (error) {
         console.error('❌ Recent payments error:', error.message);
-        console.error(error.stack);
+        console.error('Stack:', error.stack);
         res.status(500).json({ 
             error: error.message,
             count: 0, 
