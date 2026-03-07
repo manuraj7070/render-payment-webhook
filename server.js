@@ -3,8 +3,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const simpleGit = require('simple-git');
-const path = require('path');
-const fs = require('fs').promises;
+
 
 // Initialize git with token
 const git = simpleGit({
@@ -158,7 +157,7 @@ async function getPayments(forceRefresh = false) {
     return payments;
 }
 // GitHub sync function
-async function syncToGitHub() {t
+async function syncToGitHub() {
     try {
         // Only sync if we have changes
         const status = await git.status();
