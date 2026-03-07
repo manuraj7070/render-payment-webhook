@@ -355,11 +355,13 @@ app.post('/webhook', async (req, res) => {
 // NEW: Endpoint for the user's browser to land on after payment
 app.get('/payment-success', (req, res) => {
     const paymentId = req.query.razorpay_payment_id;
+    console.log(`📨 Payment success page accessed with ID: ${paymentId}`);
+    
     if (paymentId) {
         // Redirect to your frontend with the ID in the URL
         return res.redirect(`https://pay.innershiftnirvaana.space/?razorpay_payment_id=${paymentId}`);
     } else {
-        // No ID? Redirect to the main page (it will show the error message)
+        // No ID? Redirect to the main page (it will show the error)
         return res.redirect('https://pay.innershiftnirvaana.space/');
     }
 });
