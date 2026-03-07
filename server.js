@@ -370,8 +370,6 @@ app.get('/payment-success', (req, res) => {
         // No ID? Redirect to the main page (it will show the error)
         return res.redirect('https://pay.innershiftnirvaana.space/');
     }
-    
-    res.send(html);
 });
 
 // Add this endpoint to get recent payments
