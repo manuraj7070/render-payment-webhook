@@ -530,20 +530,51 @@ app.post('/payment-success', async (req, res) => {
     }
 });
 
-/* // NEW: Endpoint for the user's browser to land on after payment
-app.get('/payment-success', (req, res) => {
-    const paymentId = payment_success_paymentId;
-    console.log(`📨 Payment success page accessed with ID: ${payment_success_paymentId}`);
-    
+// ✅ Correct GET handler for Payment Links callback
+app.get('/payment-success', async (req, res) => {
+    try {
+        // Parameters come in query string, not body
+        const { 
+            razorpay_payment_id,
+            razorpay_payment_link_id,
+            razorpay_payment_link_reference_id,
+            razorpay_payment_link_status,
+            razorpay_signature 
+        } = req.query;
 
-    if (paymentId) {
-        // Redirect to your frontend with the ID in the URL
-        return res.redirect(`https://pay.innershiftnirvaana.space/?pid=${paymentId}`);
-    } else {
-        // No ID? Redirect to the main page (it will show the error)
+        console.log(`📨 Payment-success GET received:`, req.query);
+
+        if (!razorpay_payment_id) {
+            console.log('❌ No payment ID in callback');
+            return res.redirect('https://pay.innershiftnirvaana.space/');
+        }
+
+        // Optional: Verify signature for security
+        if (process.env.RAZORPAY_WEBHOOK_SECRET && razorpay_signature) {
+            // Create signature string from parameters [citation:9]
+            const signatureString = `${razorpay_payment_link_id}|${razorpay_payment_link_reference_id}|${razorpay_payment_link_status}|${razorpay_payment_id}`;
+            
+            const generatedSignature = crypto
+                .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
+                .update(signatureString)
+                .digest('hex');
+                
+            if (generatedSignature !== razorpay_signature) {
+                console.log('❌ Invalid signature');
+                return res.redirect('https://pay.innershiftnirvaana.space/');
+            }
+            console.log('✅ Signature verified');
+        }
+
+        // Redirect to frontend with payment ID
+        console.log(`🔄 Redirecting to frontend with payment ID: ${razorpay_payment_id}`);
+        return res.redirect(`https://pay.innershiftnirvaana.space/?pid=${razorpay_payment_id}`);
+
+    } catch (error) {
+        console.error('❌ Payment-success error:', error);
         return res.redirect('https://pay.innershiftnirvaana.space/');
     }
-}); */
+});
 
 // Add this endpoint to get recent payments
 // Replace your recent-payments endpoint with:
