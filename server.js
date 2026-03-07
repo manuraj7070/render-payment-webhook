@@ -330,30 +330,26 @@ app.post('/webhook', async (req, res) => {
             console.error(`⚠️ Payment ${paymentId} received but not saved`);
             // Still return 200 to Razorpay to prevent retries
         }
-        
+
         // 6. Log processing time
         const processingTime = Date.now() - startTime;
         console.log(`✅ Processed ${paymentId} in ${processingTime}ms`);
-        
-        // 7. Send success response
-        res.json({ 
-            received: true,
-            paymentId,
-            time: processingTime
-        });
-        
-    } catch (error) {
-        console.error('❌ Webhook error:', error.message);
-        console.error(error.stack);
-        
-        // Always return 200 to prevent Razorpay retries
-        // but indicate error in response
-        res.status(200).json({ 
-            received: true, 
-            error: error.message,
-            note: 'Payment received but processing failed'
-        });
-    }
+
+        // ✅ FIX: Redirect to frontend with payment ID (instead of sending JSON)
+        console.log(`🔄 Redirecting to frontend with payment ID: ${paymentId}`);
+        return res.redirect(`https://pay.innershiftnirvaana.space/?razorpay_payment_id=${paymentId}`);
+
+        } catch (error) {
+            console.error('❌ Webhook error:', error.message);
+            console.error(error.stack);
+            
+            // Always return 200 to prevent Razorpay retries
+            res.status(200).json({ 
+                received: true, 
+                error: error.message,
+                note: 'Payment received but processing failed'
+            });
+        }
 });
 
 // Add this endpoint to get recent payments
