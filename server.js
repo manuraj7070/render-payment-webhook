@@ -99,20 +99,25 @@ async function ensureWritableFile() {
 }
 
 // Load payments with error recovery
+// Load payments with error recovery
 async function loadPayments() {
     try {
+        console.log(`📂 Attempting to read from: ${PAYMENTS_FILE}`);
         const data = await fs.readFile(PAYMENTS_FILE, 'utf8');
-        return JSON.parse(data);
+        const payments = JSON.parse(data);
+        console.log(`✅ Successfully loaded ${Object.keys(payments).length} payments`);
+        return payments;
     } catch (error) {
         if (error.code === 'ENOENT') {
-            // File doesn't exist - return empty object
+            console.log('📁 No payments file found - starting fresh');
             return {};
         }
+        console.error('❌ Error loading payments:', error.message);
         // Corrupted file - backup and start fresh
         try {
             const backupFile = `${PAYMENTS_FILE}.backup.${Date.now()}`;
             await fs.rename(PAYMENTS_FILE, backupFile);
-            console.log(`⚠️ Corrupted payments file backed up to ${backupFile}`);
+            console.log(`⚠️ Corrupted file backed up to ${backupFile}`);
         } catch (backupError) {
             console.error('Could not backup corrupted file:', backupError.message);
         }
@@ -451,6 +456,22 @@ app.get('/health', async (req, res) => {
     }
 });
 
+// Add this temporarily to check the file
+app.get('/debug/check-file', async (req, res) => {
+    try {
+        const exists = await fs.access(PAYMENTS_FILE).then(() => true).catch(() => false);
+        const content = exists ? await fs.readFile(PAYMENTS_FILE, 'utf8') : 'File not found';
+        res.json({
+            fileExists: exists,
+            filePath: PAYMENTS_FILE,
+            content: exists ? JSON.parse(content) : null,
+            cacheSize: paymentsCache ? Object.keys(paymentsCache).length : 0
+        });
+    } catch (error) {
+        res.json({ error: error.message });
+    }
+});
+
 // Graceful shutdown
 async function gracefulShutdown(signal) {
     console.log(`\n${signal} received - shutting down gracefully`);
@@ -485,6 +506,7 @@ process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Initialize and start server
+// Initialize and start server
 async function startServer() {
     try {
         // Force /tmp if writable is false
@@ -500,11 +522,14 @@ async function startServer() {
         // Ensure directories exist
         await ensureDirectories();
         
-        // Load existing payments on startup
-        const payments = await loadPayments();
-        await ensureWritableFile();
-        console.log(`📁 Current PAYMENTS_FILE: ${PAYMENTS_FILE}`);
-
+        // FORCE LOAD payments from disk
+        console.log('🔄 Force loading payments from disk...');
+        const payments = await loadPayments();  // This should now log properly
+        
+        // Update cache
+        paymentsCache = payments;
+        lastCacheUpdate = Date.now();
+        
         console.log(`✅ Loaded ${Object.keys(payments).length} existing payments`);
         
         // Start server
