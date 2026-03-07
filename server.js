@@ -28,13 +28,15 @@ const cors = require('cors');
 // Get allowed origins from environment variable
 // Get allowed origins from environment variable
 // Get allowed origins - add the specific Google embed domain
+// Get allowed origins - add the specific Google embed domain
 const allowedOrigins = process.env.ALLOWED_ORIGINS 
     ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
     : [
         'https://manuraj7070.github.io',
         'https://innershiftnirvaana.space',
-        'https://588380366-atari-embeds.googleusercontent.com',  // Add the exact origin
-        'https://*.googleusercontent.com'  // Keep wildcard
+        'https://pay.innershiftnirvaana.space',  // ← ADD THIS LINE
+        'https://588380366-atari-embeds.googleusercontent.com',
+        'https://*.googleusercontent.com'
       ]; 
 
 console.log('🔓 Allowed CORS origins:', allowedOrigins);
