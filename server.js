@@ -273,15 +273,51 @@ function validateWebhookPayload(body) {
 app.post('/webhook', async (req, res) => {
     const startTime = Date.now();
     
+   // Error redirect HTML
+   const errorHtml = `
+   <!DOCTYPE html>
+   <html>
+   <head>
+       <meta http-equiv="refresh" content="3; url=https://pay.innershiftnirvaana.space/">
+       <title>Payment Processing</title>
+       <style>
+           body {
+               font-family: Arial, sans-serif;
+               background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+               min-height: 100vh;
+               display: flex;
+               justify-content: center;
+               align-items: center;
+           }
+           .container {
+               background: white;
+               border-radius: 20px;
+               padding: 40px;
+               max-width: 400px;
+               text-align: center;
+           }
+           p { color: #dc3545; font-size: 16px; }
+       </style>
+   </head>
+   <body>
+       <div class="container">
+           <p>⚠️ Payment received but there was an issue.</p>
+           <p>Redirecting to home page...</p>
+       </div>
+   </body>
+   </html>
+   `;    
+
     try {
         // Add at start of webhook
         const requestId = crypto.randomBytes(8).toString('hex');
         console.log(`[${requestId}] Webhook received`);
+ 
 
         // 1. Basic request validation
         if (!req.body) {
             console.log('❌ Empty webhook body');
-            return res.redirect('https://pay.innershiftnirvaana.space/');
+            return res.send(errorHtml);
         }
         
 
@@ -290,12 +326,12 @@ app.post('/webhook', async (req, res) => {
         if (WEBHOOK_SECRET) {
             if (!signature) {
                 console.log('❌ Missing signature header');
-                return res.redirect('https://pay.innershiftnirvaana.space/');
+                return res.send(errorHtml);
             }
             
             if (!verifySignature(req.body, signature)) {
                 console.log('❌ Invalid signature');
-                return res.redirect('https://pay.innershiftnirvaana.space/');
+                return res.send(errorHtml);
             }
             console.log('✅ Signature verified');
         }
@@ -304,7 +340,7 @@ app.post('/webhook', async (req, res) => {
         const validation = validateWebhookPayload(req.body);
         if (!validation.valid) {
             console.log('❌ Invalid payload:', validation.error);
-            return res.redirect('https://pay.innershiftnirvaana.space/');
+            return res.send(errorHtml);
         }
         
         const paymentId = validation.paymentId;
@@ -314,6 +350,73 @@ app.post('/webhook', async (req, res) => {
         console.log(`📨 Webhook received: ${event} for ${paymentId}`);
         console.log(`[${requestId}] Payment ${paymentId}`);
 
+// ✅ Instead of redirect, return HTML that redirects the browser
+console.log(`🔄 Sending HTML redirect to frontend with payment ID: ${paymentId}`);
+
+const redirectHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta http-equiv="refresh" content="0; url=https://pay.innershiftnirvaana.space/?pid=${paymentId}">
+    <title>Redirecting...</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 400px;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        p {
+            color: #333;
+            font-size: 18px;
+            margin: 20px 0;
+        }
+        .payment-id {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 14px;
+            color: #28a745;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner"></div>
+        <p>Payment successful! Redirecting you...</p>
+        <div class="payment-id">${paymentId}</div>
+        <p style="font-size: 14px; color: #666;">If you are not redirected, <a href="https://pay.innershiftnirvaana.space/?pid=${paymentId}">click here</a></p>
+    </div>
+</body>
+</html>
+`;
         //payment_success_paymentId = paymentId;
 
         // 4. Extract ALL payment details
@@ -385,7 +488,7 @@ app.post('/webhook', async (req, res) => {
 
         // ✅ FIX: Redirect to frontend with payment ID (instead of sending JSON)
         console.log(`🔄 Redirecting to frontend with payment ID: ${paymentId}`);
-        return res.redirect(`https://pay.innershiftnirvaana.space/?pid=${paymentId}`);
+        return res.send(redirectHtml);
 
         } catch (error) {
             console.error('❌ Webhook error:', error.message);
@@ -393,7 +496,7 @@ app.post('/webhook', async (req, res) => {
             
             // ✅ On any error, redirect to home page without PID
             console.log('🔄 Redirecting to home page due to error');
-            return res.redirect('https://pay.innershiftnirvaana.space/');
+            return res.send(errorHtml);
         }
 });
 
