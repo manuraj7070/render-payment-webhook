@@ -353,17 +353,41 @@ app.post('/webhook', async (req, res) => {
 });
 
 // NEW: Endpoint for the user's browser to land on after payment
-app.get('/payment-success', (req, res) => {
-    const paymentId = req.query.razorpay_payment_id;
-    console.log(`📨 Payment success page accessed with ID: ${paymentId}`);
-    
-    if (paymentId) {
-        // Redirect to your frontend with the ID in the URL
-        return res.redirect(`https://pay.innershiftnirvaana.space/?pid=${paymentId}`);
-    } else {
-        // No ID? Redirect to the main page (it will show the error)
-        return res.redirect('https://pay.innershiftnirvaana.space/');
+// Replace your current /payment-success endpoint with this:
+app.get('/payment-success', async (req, res) => {
+    let paymentId = req.query.razorpay_payment_id;
+    console.log(`📨 Payment success page accessed. ID from URL: ${paymentId}`);
+
+    // If no ID in URL, try to get the most recent one from the database
+    if (!paymentId) {
+        console.log('⚠️ No ID in URL, checking recent payments...');
+        const payments = await getPayments();
+        const recentPayments = Object.entries(payments)
+            .sort((a, b) => new Date(b[1].timestamp) - new Date(a[1].timestamp));
+
+        if (recentPayments.length > 0) {
+            paymentId = recentPayments[0][0];
+            console.log(`✅ Using most recent payment ID from DB: ${paymentId}`);
+        }
     }
+
+    // Read your existing index.html file
+    let html = await fs.readFile(path.join(__dirname, 'index.html'), 'utf8');
+
+    // Inject the payment ID into the HTML
+    if (paymentId) {
+        html = html.replace(
+            '<span id="payment-id-display">Loading...</span>',
+            `<span id="payment-id-display">${paymentId}</span>`
+        );
+        // Also inject it as a JavaScript variable for the frontend to use
+        html = html.replace(
+            '</head>',
+            `<script>window.LATEST_PAYMENT_ID = "${paymentId}";</script></head>`
+        );
+    }
+
+    res.send(html);
 });
 
 // Add this endpoint to get recent payments
