@@ -434,6 +434,9 @@ const redirectHtml = `
             .substring(0, 16); // Short enough for storage, long enough for uniqueness
 
 
+        console.log(`🆔 User Agent: ${userAgent}`);
+        console.log(`🆔 User Agent#: ${userAgentHash}`);
+        
         const paymentData = {
             // Basic payment info
             event,
@@ -486,6 +489,7 @@ const redirectHtml = `
         console.log(`📱 Customer phone: ${paymentData.phone}`);
         console.log(`🏦 Bank RRN: ${paymentData.bank_rrn}`);
         console.log(`🆔 Order ID: ${paymentData.orderId}`);
+        console.log(`🆔 User Agent: ${paymentData.userAgent}`);
 
         
         // 5. Save to persistent storage
