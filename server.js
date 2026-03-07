@@ -423,6 +423,16 @@ const redirectHtml = `
         const payment = req.body.payload?.payment?.entity || {};
         const notes = payment.notes || {};
         const acquirerData = payment.acquirer_data || {};
+        // Get User-Agent from request headers
+        const userAgent = req.headers['user-agent'] || 'unknown';
+        
+        // Create a hash of the User-Agent + timestamp (for uniqueness)
+        const userAgentHash = crypto
+            .createHash('sha256')
+            .update(userAgent + Date.now().toString())
+            .digest('hex')
+            .substring(0, 16); // Short enough for storage, long enough for uniqueness
+
 
         const paymentData = {
             // Basic payment info
@@ -465,6 +475,9 @@ const redirectHtml = `
             // Timestamps
             created_at: payment.created_at,
             captured_at: payment.captured_at,
+            userAgentHash: userAgentHash,
+            userAgent: userAgent, // Store full UA for debugging
+            timestamp: new Date().toISOString(),
             receivedAt: new Date().toISOString()
         };
 
@@ -499,7 +512,43 @@ const redirectHtml = `
             return res.send(errorHtml);
         }
 });
-
+// New endpoint to find payment by User-Agent
+app.post('/api/find-payment-by-ua', async (req, res) => {
+    try {
+        const { userAgent } = req.body;
+        console.log('🔍 Looking up payment for User-Agent:', userAgent.substring(0, 50) + '...');
+        
+        const payments = await getPayments();
+        
+        // Find the most recent payment from this browser
+        // Sort by timestamp (newest first)
+        const matchingPayments = Object.entries(payments)
+            .filter(([_, data]) => data.userAgent === userAgent)
+            .sort((a, b) => new Date(b[1].timestamp) - new Date(a[1].timestamp));
+        
+        if (matchingPayments.length > 0) {
+            const [paymentId, paymentData] = matchingPayments[0];
+            console.log('✅ Found matching payment:', paymentId);
+            res.json({
+                success: true,
+                paymentId: paymentId,
+                details: {
+                    amount: paymentData.amount,
+                    timestamp: paymentData.timestamp
+                }
+            });
+        } else {
+            console.log('❌ No payment found for this User-Agent');
+            res.json({
+                success: false,
+                message: 'No payment found'
+            });
+        }
+    } catch (error) {
+        console.error('❌ Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
 app.post('/payment-success', async (req, res) => {
     try {
         const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
