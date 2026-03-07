@@ -3,6 +3,9 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const simpleGit = require('simple-git');
+// In-memory store for payment link mappings (add this near other variables)
+const linkToPaymentMap = {};
+
 
 
 // Initialize git with token
@@ -270,252 +273,194 @@ function validateWebhookPayload(body) {
 }
 
 // Webhook endpoint
+// Webhook endpoint
 app.post('/webhook', async (req, res) => {
     const startTime = Date.now();
     
-   // Error redirect HTML
-   const errorHtml = `
-   <!DOCTYPE html>
-   <html>
-   <head>
-       <meta http-equiv="refresh" content="3; url=https://pay.innershiftnirvaana.space/">
-       <title>Payment Processing</title>
-       <style>
-           body {
-               font-family: Arial, sans-serif;
-               background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-               min-height: 100vh;
-               display: flex;
-               justify-content: center;
-               align-items: center;
-           }
-           .container {
-               background: white;
-               border-radius: 20px;
-               padding: 40px;
-               max-width: 400px;
-               text-align: center;
-           }
-           p { color: #dc3545; font-size: 16px; }
-       </style>
-   </head>
-   <body>
-       <div class="container">
-           <p>⚠️ Payment received but there was an issue.</p>
-           <p>Redirecting to home page...</p>
-       </div>
-   </body>
-   </html>
-   `;    
-
+    // Error redirect HTML
+    const errorHtml = `...`; // Your existing error HTML
+    
     try {
-        // Add at start of webhook
         const requestId = crypto.randomBytes(8).toString('hex');
         console.log(`[${requestId}] Webhook received`);
- 
-
-        // 1. Basic request validation
+        
         if (!req.body) {
             console.log('❌ Empty webhook body');
             return res.send(errorHtml);
         }
-        
 
-        // 2. Signature verification (if secret is configured)
-        const signature = req.headers['x-razorpay-signature'];
-        if (WEBHOOK_SECRET) {
-            if (!signature) {
-                console.log('❌ Missing signature header');
+        console.log('Event:', req.body.event);
+        const eventType = req.body.event;
+        
+        // Handle payment.authorized - store mapping
+        if (eventType === 'payment.authorized') {
+            const payment = req.body.payload?.payment?.entity || {};
+            const notes = payment.notes || {};
+            const paymentPageId = notes.payment_page_id || notes.payment_page_link_id || notes.page_id || 'N/A';
+            const paymentId = payment.id;
+            
+            console.log(`📄 Payment Page ID: ${paymentPageId}`);
+            console.log(`💰 Payment ID: ${paymentId}`);
+            
+            // Store mapping
+            linkToPaymentMap[paymentPageId] = paymentId;
+            
+            return res.status(200).json({ received: true });
+        }
+        
+        // Handle payment.captured - save full details
+        else if (eventType === 'payment.captured') {
+            // Signature verification
+            const signature = req.headers['x-razorpay-signature'];
+            if (WEBHOOK_SECRET) {
+                if (!signature) {
+                    console.log('❌ Missing signature header');
+                    return res.send(errorHtml);
+                }
+                if (!verifySignature(req.body, signature)) {
+                    console.log('❌ Invalid signature');
+                    return res.send(errorHtml);
+                }
+                console.log('✅ Signature verified');
+            }
+            
+            // Validate payload
+            const validation = validateWebhookPayload(req.body);
+            if (!validation.valid) {
+                console.log('❌ Invalid payload:', validation.error);
                 return res.send(errorHtml);
             }
             
-            if (!verifySignature(req.body, signature)) {
-                console.log('❌ Invalid signature');
-                return res.send(errorHtml);
+            const paymentId = validation.paymentId;
+            const event = req.body.event || 'unknown';
+            
+            console.log(`📨 Webhook received: ${event} for ${paymentId}`);
+            console.log(`[${requestId}] Payment ${paymentId}`);
+
+            // Extract payment details
+            const payment = req.body.payload?.payment?.entity || {};
+            const notes = payment.notes || {};
+            const acquirerData = payment.acquirer_data || {};
+            const userAgent = req.headers['user-agent'] || 'unknown';
+            
+            const paymentPageId = notes.payment_page_id || notes.payment_page_link_id || notes.page_id || 'N/A';
+            // After extracting paymentPageId, add this line:
+            if (paymentPageId !== 'N/A') {
+                linkToPaymentMap[paymentPageId] = paymentId;
             }
-            console.log('✅ Signature verified');
+            const userAgentHash = crypto
+                .createHash('sha256')
+                .update(userAgent + Date.now().toString())
+                .digest('hex')
+                .substring(0, 16);
+
+            console.log(`🆔 User Agent: ${userAgent}`);
+            console.log(`🆔 User Agent#: ${userAgentHash}`);
+            console.log(`📄 Payment Page ID: ${paymentPageId}`);
+
+            const paymentData = {
+                event,
+                paymentId,
+                amount: payment.amount,
+                currency: payment.currency,
+                status: payment.status,
+                method: payment.method,
+                orderId: payment.order_id,
+                email: notes.email || payment.email || notes.customer_email || 'N/A',
+                phone: notes.contact || payment.contact || notes.customer_phone || 'N/A',
+                customer_name: notes.customer_name || 'N/A',
+                bank_rrn: acquirerData.rrn || payment.rrn || 'N/A',
+                bank_transaction_id: acquirerData.bank_transaction_id || 'N/A',
+                bank_name: acquirerData.bank_name || 'N/A',
+                ifsc: acquirerData.ifsc || 'N/A',
+                vpa: acquirerData.vpa || 'N/A',
+                card_id: payment.card_id || 'N/A',
+                card_last4: payment.card?.last4 || 'N/A',
+                card_network: payment.card?.network || 'N/A',
+                card_type: payment.card?.type || 'N/A',
+                description: payment.description || 'N/A',
+                fee: payment.fee,
+                tax: payment.tax,
+                rawData: process.env.NODE_ENV === 'development' ? req.body : undefined,
+                created_at: payment.created_at,
+                captured_at: payment.captured_at,
+                userAgentHash: userAgentHash,
+                userAgent: userAgent,
+                paymentPageId: paymentPageId,  // Store the Page ID!
+                timestamp: new Date().toISOString(),
+                receivedAt: new Date().toISOString()
+            };
+
+            // Log extracted details
+            console.log(`📧 Customer email: ${paymentData.email}`);
+            console.log(`📱 Customer phone: ${paymentData.phone}`);
+            console.log(`🏦 Bank RRN: ${paymentData.bank_rrn}`);
+            console.log(`🆔 Order ID: ${paymentData.orderId}`);
+
+            // Save to persistent storage
+            const saved = await savePayment(paymentId, paymentData);
+            if (!saved) {
+                console.error(`⚠️ Payment ${paymentId} received but not saved`);
+            }
+
+            const processingTime = Date.now() - startTime;
+            console.log(`✅ Processed ${paymentId} in ${processingTime}ms`);
+
+            // HTML redirect
+            const redirectHtml = `...`; // Your existing redirect HTML
+            
+            return res.send(redirectHtml);
         }
         
-        // 3. Validate payload structure
-        const validation = validateWebhookPayload(req.body);
-        if (!validation.valid) {
-            console.log('❌ Invalid payload:', validation.error);
-            return res.send(errorHtml);
+        // Unknown event type
+        else {
+            console.log(`⚠️ Unknown event type: ${eventType}`);
+            return res.status(200).json({ received: true });
         }
         
-        const paymentId = validation.paymentId;
-        
-        const event = req.body.event || 'unknown';
-        
-        console.log(`📨 Webhook received: ${event} for ${paymentId}`);
-        console.log(`[${requestId}] Payment ${paymentId}`);
-
-// ✅ Instead of redirect, return HTML that redirects the browser
-console.log(`🔄 Sending HTML redirect to frontend with payment ID: ${paymentId}`);
-
-const redirectHtml = `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta http-equiv="refresh" content="0; url=https://pay.innershiftnirvaana.space/?pid=${paymentId}">
-    <title>Redirecting...</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin: 0;
-            padding: 20px;
-        }
-        .container {
-            background: white;
-            border-radius: 20px;
-            padding: 40px;
-            max-width: 400px;
-            text-align: center;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-        }
-        .spinner {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #667eea;
-            border-radius: 50%;
-            width: 50px;
-            height: 50px;
-            animation: spin 1s linear infinite;
-            margin: 20px auto;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-        p {
-            color: #333;
-            font-size: 18px;
-            margin: 20px 0;
-        }
-        .payment-id {
-            background: #f0f0f0;
-            padding: 10px;
-            border-radius: 5px;
-            font-family: monospace;
-            font-size: 14px;
-            color: #28a745;
-            word-break: break-all;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="spinner"></div>
-        <p>Payment successful! Redirecting you...</p>
-        <div class="payment-id">${paymentId}</div>
-        <p style="font-size: 14px; color: #666;">If you are not redirected, <a href="https://pay.innershiftnirvaana.space/?pid=${paymentId}">click here</a></p>
-    </div>
-</body>
-</html>
-`;
-        //payment_success_paymentId = paymentId;
-
-        // 4. Extract ALL payment details
-        const payment = req.body.payload?.payment?.entity || {};
-        const notes = payment.notes || {};
-        const acquirerData = payment.acquirer_data || {};
-        // Get User-Agent from request headers
-        const userAgent = req.headers['user-agent'] || 'unknown';
-        
-        // Create a hash of the User-Agent + timestamp (for uniqueness)
-        const userAgentHash = crypto
-            .createHash('sha256')
-            .update(userAgent + Date.now().toString())
-            .digest('hex')
-            .substring(0, 16); // Short enough for storage, long enough for uniqueness
-
-
-        console.log(`🆔 User Agent: ${userAgent}`);
-        console.log(`🆔 User Agent#: ${userAgentHash}`);
-        
-        const paymentData = {
-            // Basic payment info
-            event,
-            paymentId,
-            amount: payment.amount,
-            currency: payment.currency,
-            status: payment.status,
-            method: payment.method,
-            orderId: payment.order_id,
-            
-            // Customer contact info
-            email: notes.email || payment.email || notes.customer_email || 'N/A',
-            phone: notes.contact || payment.contact || notes.customer_phone || 'N/A',
-            customer_name: notes.customer_name || 'N/A',
-            
-            // Bank transaction details
-            bank_rrn: acquirerData.rrn || payment.rrn || 'N/A',
-            bank_transaction_id: acquirerData.bank_transaction_id || 'N/A',
-            bank_name: acquirerData.bank_name || 'N/A',
-            ifsc: acquirerData.ifsc || 'N/A',
-            
-            // UPI specific
-            vpa: acquirerData.vpa || 'N/A',
-            
-            // Card specific
-            card_id: payment.card_id || 'N/A',
-            card_last4: payment.card?.last4 || 'N/A',
-            card_network: payment.card?.network || 'N/A',
-            card_type: payment.card?.type || 'N/A',
-            
-            // Additional metadata
-            description: payment.description || 'N/A',
-            fee: payment.fee,
-            tax: payment.tax,
-            
-            // Raw data for debugging (only in development)
-            rawData: process.env.NODE_ENV === 'development' ? req.body : undefined,
-            
-            // Timestamps
-            created_at: payment.created_at,
-            captured_at: payment.captured_at,
-            userAgentHash: userAgentHash,
-            userAgent: userAgent, // Store full UA for debugging
-            timestamp: new Date().toISOString(),
-            receivedAt: new Date().toISOString()
-        };
-
-        // Log extracted details
-        console.log(`📧 Customer email: ${paymentData.email}`);
-        console.log(`📱 Customer phone: ${paymentData.phone}`);
-        console.log(`🏦 Bank RRN: ${paymentData.bank_rrn}`);
-        console.log(`🆔 Order ID: ${paymentData.orderId}`);
-        console.log(`🆔 User Agent: ${paymentData.userAgent}`);
-
-        
-        // 5. Save to persistent storage
-        const saved = await savePayment(paymentId, paymentData);
-        if (!saved) {
-            console.error(`⚠️ Payment ${paymentId} received but not saved`);
-            // Still return 200 to Razorpay to prevent retries
-        }
-
-        // 6. Log processing time
-        const processingTime = Date.now() - startTime;
-        console.log(`✅ Processed ${paymentId} in ${processingTime}ms`);
-
-        // ✅ FIX: Redirect to frontend with payment ID (instead of sending JSON)
-        console.log(`🔄 Redirecting to frontend with payment ID: ${paymentId}`);
-        return res.send(redirectHtml);
-
-        } catch (error) {
-            console.error('❌ Webhook error:', error.message);
-            console.error(error.stack);
-            
-            // ✅ On any error, redirect to home page without PID
-            console.log('🔄 Redirecting to home page due to error');
-            return res.send(errorHtml);
-        }
+    } catch (error) {
+        console.error('❌ Webhook error:', error.message);
+        console.error(error.stack);
+        return res.send(errorHtml);
+    }
 });
+
+
+// Get payment details using Payment Page ID
+app.get('/api/payment-by-page/:pageId', async (req, res) => {
+    try {
+        const { pageId } = req.params;
+        console.log(`🔍 Looking up payment for Payment Page ID: ${pageId}`);
+        
+        const payments = await getPayments();
+        
+        // Find payment where paymentPageId matches
+        const paymentEntry = Object.entries(payments).find(
+            ([_, data]) => data.paymentPageId === pageId
+        );
+        
+        if (paymentEntry) {
+            const [paymentId, paymentData] = paymentEntry;
+            res.json({
+                success: true,
+                paymentId: paymentId,
+                details: {
+                    amount: paymentData.amount,
+                    timestamp: paymentData.timestamp
+                }
+            });
+        } else {
+            res.json({
+                success: false,
+                message: 'Payment not found for this page'
+            });
+        }
+    } catch (error) {
+        console.error('❌ Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // New endpoint to find payment by User-Agent
 app.post('/api/find-payment-by-ua', async (req, res) => {
     try {
