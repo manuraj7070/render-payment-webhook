@@ -519,6 +519,22 @@ async function startServer() {
             console.error('❌ Even /tmp is not writable!');
         }        
         
+        // After forcing /tmp, test writability
+        try {
+            await fs.access('/tmp', fs.constants.W_OK);
+            console.log('✅ /tmp is writable');
+            
+            // Create an empty file if it doesn't exist
+            try {
+                await fs.access(PAYMENTS_FILE);
+            } catch {
+                await fs.writeFile(PAYMENTS_FILE, '{}');
+                console.log('📁 Created empty payments file');
+            }
+        } catch (e) {
+            console.error('❌ /tmp is NOT writable:', e.message);
+        }        
+
         // Ensure directories exist
         await ensureDirectories();
         
