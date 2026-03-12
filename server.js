@@ -94,6 +94,18 @@ const CACHE_TTL = 60000; // 60 seconds
 const MAX_PAYMENTS = 10000; // Prevent unlimited file growth
 //let payment_success_paymentId = null;
 
+// ============================================
+// Helper function to create Razorpay instance from request
+// ============================================
+function getRazorpayInstance(keyId, keySecret) {
+    if (!keyId || !keySecret) {
+        throw new Error('Razorpay key_id and key_secret are required');
+    }
+    return new Razorpay({
+        key_id: keyId,
+        key_secret: keySecret
+    });
+}
 // Ensure directories exist
 async function ensureDirectories() {
     try {
