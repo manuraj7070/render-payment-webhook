@@ -494,10 +494,161 @@ app.post('/api/payment', async (req, res) => {
     }
 });
 
+// Webhook endpoint
+app.post('/webhook', async (req, res) => {
+    const startTime = Date.now();
+    
+    // Error redirect HTML
+    const errorHtml = `...`; // Your existing error HTML
+    
+    try {
+        const requestId = crypto.randomBytes(8).toString('hex');
+        console.log(`[${requestId}] Webhook received`);
+        
+        if (!req.body) {
+            console.log('❌ Empty webhook body');
+            return res.send(errorHtml);
+        }
+
+        console.log('Event:', req.body.event);
+        const eventType = req.body.event;
+        
+        // Handle payment.authorized - store mapping
+        if (eventType === 'payment.authorized') {
+            const payment = req.body.payload?.payment?.entity || {};
+            const notes = payment.notes || {};
+            const paymentPageId = notes.payment_page_id || notes.payment_page_link_id || notes.page_id || 'N/A';
+            const paymentId = payment.id;
+            
+            console.log(`📄 Payment Page ID: ${paymentPageId}`);
+            console.log(`💰 Payment ID: ${paymentId}`);
+            
+            // Store mapping
+            linkToPaymentMap[paymentPageId] = paymentId;
+            
+            return res.status(200).json({ received: true });
+        }
+        
+        // Handle payment.captured - save full details
+        else if (eventType === 'payment.captured') {
+            // Signature verification
+            const signature = req.headers['x-razorpay-signature'];
+            if (WEBHOOK_SECRET) {
+                if (!signature) {
+                    console.log('❌ Missing signature header');
+                    return res.send(errorHtml);
+                }
+                if (!verifySignature(req.body, signature)) {
+                    console.log('❌ Invalid signature');
+                    return res.send(errorHtml);
+                }
+                console.log('✅ Signature verified');
+            }
+            
+            // Validate payload
+            const validation = validateWebhookPayload(req.body);
+            if (!validation.valid) {
+                console.log('❌ Invalid payload:', validation.error);
+                return res.send(errorHtml);
+            }
+            
+            const paymentId = validation.paymentId;
+            const event = req.body.event || 'unknown';
+            
+            console.log(`📨 Webhook received: ${event} for ${paymentId}`);
+            console.log(`[${requestId}] Payment ${paymentId}`);
+
+            // Extract payment details
+            const payment = req.body.payload?.payment?.entity || {};
+            const notes = payment.notes || {};
+            const acquirerData = payment.acquirer_data || {};
+            const userAgent = req.headers['user-agent'] || 'unknown';
+            
+            const paymentPageId = notes.payment_page_id || notes.payment_page_link_id || notes.page_id || 'N/A';
+            // After extracting paymentPageId, add this line:
+            if (paymentPageId !== 'N/A') {
+                linkToPaymentMap[paymentPageId] = paymentId;
+            }
+            const userAgentHash = crypto
+                .createHash('sha256')
+                .update(userAgent + Date.now().toString())
+                .digest('hex')
+                .substring(0, 16);
+
+            console.log(`🆔 User Agent: ${userAgent}`);
+            console.log(`🆔 User Agent#: ${userAgentHash}`);
+            console.log(`📄 Payment Page ID: ${paymentPageId}`);
+
+            const paymentData = {
+                event,
+                paymentId,
+                amount: payment.amount,
+                currency: payment.currency,
+                status: payment.status,
+                method: payment.method,
+                orderId: payment.order_id,
+                email: notes.email || payment.email || notes.customer_email || 'N/A',
+                phone: notes.contact || payment.contact || notes.customer_phone || 'N/A',
+                customer_name: notes.customer_name || 'N/A',
+                bank_rrn: acquirerData.rrn || payment.rrn || 'N/A',
+                bank_transaction_id: acquirerData.bank_transaction_id || 'N/A',
+                bank_name: acquirerData.bank_name || 'N/A',
+                ifsc: acquirerData.ifsc || 'N/A',
+                vpa: acquirerData.vpa || 'N/A',
+                card_id: payment.card_id || 'N/A',
+                card_last4: payment.card?.last4 || 'N/A',
+                card_network: payment.card?.network || 'N/A',
+                card_type: payment.card?.type || 'N/A',
+                description: payment.description || 'N/A',
+                fee: payment.fee,
+                tax: payment.tax,
+                rawData: process.env.NODE_ENV === 'development' ? req.body : undefined,
+                created_at: payment.created_at,
+                captured_at: payment.captured_at,
+                userAgentHash: userAgentHash,
+                userAgent: userAgent,
+                paymentPageId: paymentPageId,  // Store the Page ID!
+                timestamp: new Date().toISOString(),
+                receivedAt: new Date().toISOString()
+            };
+
+            // Log extracted details
+            console.log(`📧 Customer email: ${paymentData.email}`);
+            console.log(`📱 Customer phone: ${paymentData.phone}`);
+            console.log(`🏦 Bank RRN: ${paymentData.bank_rrn}`);
+            console.log(`🆔 Order ID: ${paymentData.orderId}`);
+
+            // Save to persistent storage
+            const saved = await savePayment(paymentId, paymentData);
+            if (!saved) {
+                console.error(`⚠️ Payment ${paymentId} received but not saved`);
+            }
+
+            const processingTime = Date.now() - startTime;
+            console.log(`✅ Processed ${paymentId} in ${processingTime}ms`);
+
+            // HTML redirect
+            const redirectHtml = `...`; // Your existing redirect HTML
+            
+            return res.send(redirectHtml);
+        }
+        
+        // Unknown event type
+        else {
+            console.log(`⚠️ Unknown event type: ${eventType}`);
+            return res.status(200).json({ received: true });
+        }
+        
+    } catch (error) {
+        console.error('❌ Webhook error:', error.message);
+        console.error(error.stack);
+        return res.send(errorHtml);
+    }
+});
 // ============================================
 // Webhook Endpoint (with credentials in payload)
 // ============================================
-app.post('/webhook', async (req, res) => {
+app.post('/webhooktest', async (req, res) => {
     const startTime = Date.now();
     
     try {
@@ -699,9 +850,54 @@ app.post('/api/find-payment-by-ua', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+// ✅ Correct GET handler for Payment Links callback
+app.get('/payment-success', async (req, res) => {
+    try {
+        // Parameters come in query string, not body
+        const { 
+            razorpay_payment_id,
+            razorpay_payment_link_id,
+            razorpay_payment_link_reference_id,
+            razorpay_payment_link_status,
+            razorpay_signature 
+        } = req.query;
+
+        console.log(`📨 Payment-success GET received:`, req.query);
+
+        if (!razorpay_payment_id) {
+            console.log('❌ No payment ID in callback');
+            return res.redirect('https://pay.innershiftnirvaana.space/');
+        }
+
+        // Optional: Verify signature for security
+        if (process.env.RAZORPAY_WEBHOOK_SECRET && razorpay_signature) {
+            // Create signature string from parameters [citation:9]
+            const signatureString = `${razorpay_payment_link_id}|${razorpay_payment_link_reference_id}|${razorpay_payment_link_status}|${razorpay_payment_id}`;
+            
+            const generatedSignature = crypto
+                .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
+                .update(signatureString)
+                .digest('hex');
+                
+            if (generatedSignature !== razorpay_signature) {
+                console.log('❌ Invalid signature');
+                return res.redirect('https://pay.innershiftnirvaana.space/');
+            }
+            console.log('✅ Signature verified');
+        }
+
+        // Redirect to frontend with payment ID
+        console.log(`🔄 Redirecting to frontend with payment ID: ${razorpay_payment_id}`);
+        return res.redirect(`https://pay.innershiftnirvaana.space/?pid=${razorpay_payment_id}`);
+
+    } catch (error) {
+        console.error('❌ Payment-success error:', error);
+        return res.redirect('https://pay.innershiftnirvaana.space/');
+    }
+});
 
 // Payment success handlers (keep your existing ones)
-app.post('/payment-success', async (req, res) => {
+app.post('/payment-success-test', async (req, res) => {
     try {
         const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
         
