@@ -12,7 +12,37 @@ const PORT = process.env.PORT || 3000; // Fallback for local dev
 
 // In-memory store for payment link mappings
 const linkToPaymentMap = {};
+// ============================================
+// Global Error Handlers
+// ============================================
+process.on('uncaughtException', (error) => {
+    console.error('💥 UNCAUGHT EXCEPTION:', error);
+    console.error('Stack:', error.stack);
+    // Keep process alive for 1 second to log, then exit
+    setTimeout(() => process.exit(1), 1000);
+});
 
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('💥 UNHANDLED REJECTION at:', promise);
+    console.error('Reason:', reason);
+});
+
+// Add request logging middleware right after CORS
+app.use((req, res, next) => {
+    console.log(`📥 ${req.method} ${req.url} - ${new Date().toISOString()}`);
+    console.log('Headers:', JSON.stringify(req.headers, null, 2));
+    next();
+});
+
+// Add response time tracking
+app.use((req, res, next) => {
+    const start = Date.now();
+    res.on('finish', () => {
+        const duration = Date.now() - start;
+        console.log(`📤 ${req.method} ${req.url} - ${res.statusCode} - ${duration}ms`);
+    });
+    next();
+});
 // Initialize git with token
 const git = simpleGit({
     baseDir: __dirname,
@@ -23,7 +53,18 @@ const git = simpleGit({
     GIT_USERNAME: 'manuraj7070',
     GIT_PASSWORD: process.env.GITHUB_TOKEN
 });
-
+// Test git immediately
+(async () => {
+    try {
+        console.log('🔧 Testing Git configuration...');
+        const status = await git.status();
+        console.log('✅ Git working, branch:', status.current);
+    } catch (error) {
+        console.error('❌ Git initialization failed:', error.message);
+        // Don't exit - app can still work without Git
+        console.log('⚠️ Continuing without Git functionality');
+    }
+})();
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
@@ -574,19 +615,46 @@ app.get('/verify/:paymentId', async (req, res) => {
 });
 
 // Health check
+// Enhanced health check
 app.get('/health', async (req, res) => {
     try {
-        res.json({
+        const healthData = {
             status: 'ok',
-            time: new Date().toISOString(),
+            timestamp: new Date().toISOString(),
             uptime: Math.floor(process.uptime()),
-            node: process.version
-        });
+            node: process.version,
+            memory: process.memoryUsage(),
+            pid: process.pid,
+            port: process.env.PORT,
+            env: {
+                NODE_ENV: process.env.NODE_ENV,
+                HAS_GITHUB_TOKEN: !!process.env.GITHUB_TOKEN,
+                ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS ? 'set' : 'not set'
+            },
+            git: {
+                initialized: !!git,
+                working: false
+            }
+        };
+
+        // Test git quickly
+        try {
+            const status = await git.status();
+            healthData.git.working = true;
+            healthData.git.branch = status.current;
+        } catch (gitError) {
+            healthData.git.error = gitError.message;
+        }
+
+        res.json(healthData);
     } catch (error) {
-        res.status(500).json({ status: 'degraded', error: error.message });
+        console.error('❌ Health check error:', error);
+        res.status(500).json({ 
+            status: 'error', 
+            error: error.message 
+        });
     }
 });
-
 // ============================================
 // Helper functions (keep your existing ones)
 // ============================================
@@ -597,20 +665,42 @@ app.get('/health', async (req, res) => {
 // [Copy all your existing helper functions here - they remain unchanged]
 
 // Start server
+// Start server
 async function startServer() {
     try {
-        // Your existing startServer logic
         console.log('🚀 Webhook server starting...');
-        
-        const server = app.listen(PORT, '0.0.0.0', () => {
-            console.log(`✅ Server running on port ${process.env.PORT || 3000}`);
-            console.log(`🔓 CORS enabled for: ${allowedOrigins.join(', ')}`);
+        console.log('📦 Node version:', process.version);
+        console.log('📂 Working directory:', __dirname);
+        console.log('🔧 Environment:', {
+            PORT: process.env.PORT,
+            NODE_ENV: process.env.NODE_ENV,
+            GITHUB_TOKEN: process.env.GITHUB_TOKEN ? '✅ Set' : '❌ Not set',
+            ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS ? '✅ Set' : '❌ Not set'
         });
-        
+
+        // Test GitHub token if present
+        if (process.env.GITHUB_TOKEN) {
+            console.log('🔑 GitHub token length:', process.env.GITHUB_TOKEN.length);
+        }
+
+        const server = app.listen(process.env.PORT || 3000, '0.0.0.0', () => {
+            const address = server.address();
+            console.log(`✅ Server successfully listening!`);
+            console.log(`📡 Port: ${address.port}`);
+            console.log(`🌐 Address: ${address.address}`);
+            console.log(`🔓 CORS enabled for: ${allowedOrigins.length} origins`);
+            console.log(`🏥 Health check: /health`);
+        });
+
+        server.on('error', (error) => {
+            console.error('❌ Server error:', error);
+        });
+
         global.server = server;
         
     } catch (error) {
         console.error('❌ Failed to start server:', error);
+        console.error('Stack:', error.stack);
         process.exit(1);
     }
 }
