@@ -271,7 +271,412 @@ function validateWebhookPayload(body) {
     
     return { valid: true, paymentId };
 }
+// ============================================
+// NEW ENDPOINT: Create Razorpay Order (with credentials in payload)
+// ============================================
+app.post('/api/create-order', async (req, res) => {
+    try {
+        const { 
+            amount, 
+            currency = 'INR', 
+            receipt, 
+            notes,
+            key_id,          // Razorpay Key ID from frontend
+            key_secret        // Razorpay Key Secret from frontend
+        } = req.body;
+        
+        // Validate required fields
+        if (!key_id || !key_secret) {
+            return res.status(400).json({
+                success: false,
+                error: 'Razorpay credentials (key_id, key_secret) are required'
+            });
+        }
 
+        // Validate amount
+        if (!amount || amount <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid amount. Must be greater than 0'
+            });
+        }
+
+        console.log(`💰 Creating order for amount: ₹${amount} with key: ${key_id.substring(0, 8)}...`);
+
+        // Create Razorpay instance with provided credentials
+        const razorpay = getRazorpayInstance(key_id, key_secret);
+
+        // Create order in Razorpay
+        const orderOptions = {
+            amount: amount * 100, // Convert to paise
+            currency: currency,
+            receipt: receipt || `receipt_${Date.now()}`,
+            payment_capture: 1, // Auto capture payment
+            notes: notes || {}
+        };
+
+        const order = await razorpay.orders.create(orderOptions);
+
+        console.log(`✅ Order created: ${order.id}`);
+
+        // Return order details to frontend
+        res.json({
+            success: true,
+            order_id: order.id,
+            amount: order.amount,
+            currency: order.currency,
+            receipt: order.receipt,
+            status: order.status
+            // Don't send key_id back - already have it
+        });
+
+    } catch (error) {
+        console.error('❌ Order creation error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to create order'
+        });
+    }
+});
+
+// ============================================
+// NEW ENDPOINT: Verify Payment Signature (with credentials in payload)
+// ============================================
+app.post('/api/verify-payment', async (req, res) => {
+    try {
+        const { 
+            razorpay_order_id, 
+            razorpay_payment_id, 
+            razorpay_signature,
+            key_secret  // Key secret from frontend for verification
+        } = req.body;
+
+        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !key_secret) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required fields (order_id, payment_id, signature, key_secret)'
+            });
+        }
+
+        // Create signature string
+        const body = razorpay_order_id + '|' + razorpay_payment_id;
+
+        // Generate expected signature using provided key_secret
+        const expectedSignature = crypto
+            .createHmac('sha256', key_secret)
+            .update(body.toString())
+            .digest('hex');
+
+        // Compare signatures
+        const isValid = expectedSignature === razorpay_signature;
+
+        if (isValid) {
+            console.log(`✅ Payment verified for order: ${razorpay_order_id}`);
+            
+            // Store payment mapping
+            linkToPaymentMap[razorpay_order_id] = razorpay_payment_id;
+            
+            res.json({
+                success: true,
+                message: 'Payment verified successfully',
+                payment_id: razorpay_payment_id
+            });
+        } else {
+            console.log('❌ Invalid payment signature');
+            res.status(400).json({
+                success: false,
+                error: 'Invalid signature'
+            });
+        }
+
+    } catch (error) {
+        console.error('❌ Payment verification error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// ============================================
+// NEW ENDPOINT: Fetch Order Details (with credentials in payload)
+// ============================================
+app.post('/api/order', async (req, res) => {
+    try {
+        const { 
+            order_id,
+            key_id,
+            key_secret
+        } = req.body;
+        
+        if (!order_id || !key_id || !key_secret) {
+            return res.status(400).json({
+                success: false,
+                error: 'order_id, key_id, and key_secret are required'
+            });
+        }
+
+        // Create Razorpay instance with provided credentials
+        const razorpay = getRazorpayInstance(key_id, key_secret);
+        
+        // Fetch order from Razorpay
+        const order = await razorpay.orders.fetch(order_id);
+        
+        res.json({
+            success: true,
+            order
+        });
+
+    } catch (error) {
+        console.error('❌ Order fetch error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// ============================================
+// NEW ENDPOINT: Fetch Payment Details (with credentials in payload)
+// ============================================
+app.post('/api/payment', async (req, res) => {
+    try {
+        const { 
+            payment_id,
+            key_id,
+            key_secret
+        } = req.body;
+        
+        if (!payment_id || !key_id || !key_secret) {
+            return res.status(400).json({
+                success: false,
+                error: 'payment_id, key_id, and key_secret are required'
+            });
+        }
+
+        // Create Razorpay instance with provided credentials
+        const razorpay = getRazorpayInstance(key_id, key_secret);
+        
+        // Fetch payment from Razorpay
+        const payment = await razorpay.payments.fetch(payment_id);
+        
+        res.json({
+            success: true,
+            payment
+        });
+
+    } catch (error) {
+        console.error('❌ Payment fetch error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// ============================================
+// Webhook Endpoint (with credentials in payload)
+// ============================================
+app.post('/webhooktest', async (req, res) => {
+    const startTime = Date.now();
+    
+    try {
+        const requestId = crypto.randomBytes(8).toString('hex');
+        console.log(`[${requestId}] Webhook received`);
+        
+        if (!req.body) {
+            console.log('❌ Empty webhook body');
+            return res.status(400).send('Empty webhook body');
+        }
+
+        // Extract credentials from webhook payload
+        const { 
+            key_id, 
+            key_secret,
+            webhook_secret 
+        } = req.body;
+
+        if (!key_id || !key_secret) {
+            console.log('❌ Missing Razorpay credentials in webhook payload');
+            return res.status(400).json({ error: 'Credentials required' });
+        }
+
+        console.log('Event:', req.body.event);
+        const eventType = req.body.event;
+        
+        // Handle payment.authorized
+        if (eventType === 'payment.authorized') {
+            const payment = req.body.payload?.payment?.entity || {};
+            const notes = payment.notes || {};
+            const paymentPageId = notes.payment_page_id || notes.payment_page_link_id || notes.page_id || 'N/A';
+            const paymentId = payment.id;
+            const orderId = payment.order_id;
+            
+            console.log(`📄 Payment Page ID: ${paymentPageId}`);
+            console.log(`💰 Payment ID: ${paymentId}`);
+            console.log(`📦 Order ID: ${orderId}`);
+            
+            // Store mapping
+            linkToPaymentMap[paymentPageId] = paymentId;
+            
+            return res.status(200).json({ received: true });
+        }
+        
+        // Handle payment.captured
+        else if (eventType === 'payment.captured') {
+            // Signature verification using webhook_secret from payload
+            const signature = req.headers['x-razorpay-signature'];
+            if (webhook_secret) {
+                if (!signature) {
+                    console.log('❌ Missing signature header');
+                    return res.status(400).send('Missing signature');
+                }
+                
+                const expectedSignature = crypto
+                    .createHmac('sha256', webhook_secret)
+                    .update(JSON.stringify(req.body))
+                    .digest('hex');
+                
+                if (!crypto.timingSafeEqual(
+                    Buffer.from(signature),
+                    Buffer.from(expectedSignature)
+                )) {
+                    console.log('❌ Invalid signature');
+                    return res.status(400).send('Invalid signature');
+                }
+                console.log('✅ Signature verified');
+            }
+            
+            // Extract payment details
+            const payment = req.body.payload?.payment?.entity || {};
+            const notes = payment.notes || {};
+            const acquirerData = payment.acquirer_data || {};
+            const paymentId = payment.id;
+            const orderId = payment.order_id;
+            
+            console.log(`📨 Payment captured: ${paymentId} for order: ${orderId}`);
+            
+            const paymentPageId = notes.payment_page_id || notes.payment_page_link_id || notes.page_id || 'N/A';
+            
+            // Store mapping
+            if (paymentPageId !== 'N/A') {
+                linkToPaymentMap[paymentPageId] = paymentId;
+            }
+            
+            const paymentData = {
+                event: eventType,
+                paymentId,
+                orderId,
+                amount: payment.amount,
+                currency: payment.currency,
+                status: payment.status,
+                method: payment.method,
+                email: notes.email || payment.email || notes.customer_email || 'N/A',
+                phone: notes.contact || payment.contact || notes.customer_phone || 'N/A',
+                customer_name: notes.customer_name || 'N/A',
+                bank_rrn: acquirerData.rrn || payment.rrn || 'N/A',
+                bank_transaction_id: acquirerData.bank_transaction_id || 'N/A',
+                paymentPageId,
+                timestamp: new Date().toISOString(),
+                receivedAt: new Date().toISOString()
+            };
+
+            // Save to storage
+            const saved = await savePayment(paymentId, paymentData);
+            
+            const processingTime = Date.now() - startTime;
+            console.log(`✅ Processed ${paymentId} in ${processingTime}ms`);
+
+            return res.status(200).json({ 
+                received: true, 
+                paymentId,
+                orderId 
+            });
+        }
+        
+        // Unknown event type
+        else {
+            console.log(`⚠️ Unknown event type: ${eventType}`);
+            return res.status(200).json({ received: true });
+        }
+        
+    } catch (error) {
+        console.error('❌ Webhook error:', error.message);
+        return res.status(500).send('Webhook processing error');
+    }
+});
+// Payment success handlers (keep your existing ones)
+app.post('/payment-success-test', async (req, res) => {
+    try {
+        const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
+        
+        if (!razorpay_payment_id) {
+            return res.redirect('https://pay.innershiftnirvaana.space/');
+        }
+        
+        return res.redirect(`https://pay.innershiftnirvaana.space/?pid=${razorpay_payment_id}`);
+        
+    } catch (error) {
+        console.error('❌ Error:', error);
+        return res.redirect('https://pay.innershiftnirvaana.space/');
+    }
+});
+
+app.get('/payment-success-test', async (req, res) => {
+    try {
+        const { razorpay_payment_id } = req.query;
+
+        if (!razorpay_payment_id) {
+            return res.redirect('https://pay.innershiftnirvaana.space/');
+        }
+
+        return res.redirect(`https://pay.innershiftnirvaana.space/?pid=${razorpay_payment_id}`);
+
+    } catch (error) {
+        console.error('❌ Payment-success error:', error);
+        return res.redirect('https://pay.innershiftnirvaana.space/');
+    }
+});
+// Enhanced health check
+app.get('/health-test', async (req, res) => {
+    try {
+        const healthData = {
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            uptime: Math.floor(process.uptime()),
+            node: process.version,
+            memory: process.memoryUsage(),
+            pid: process.pid,
+            port: process.env.PORT,
+            env: {
+                NODE_ENV: process.env.NODE_ENV,
+                HAS_GITHUB_TOKEN: !!process.env.GITHUB_TOKEN,
+                ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS ? 'set' : 'not set'
+            },
+            git: {
+                initialized: !!git,
+                working: false
+            }
+        };
+
+        // Test git quickly
+        try {
+            const status = await git.status();
+            healthData.git.working = true;
+            healthData.git.branch = status.current;
+        } catch (gitError) {
+            healthData.git.error = gitError.message;
+        }
+
+        res.json(healthData);
+    } catch (error) {
+        console.error('❌ Health check error:', error);
+        res.status(500).json({ 
+            status: 'error', 
+            error: error.message 
+        });
+    }
+});
 // Webhook endpoint
 // Webhook endpoint
 app.post('/webhook', async (req, res) => {
