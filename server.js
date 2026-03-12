@@ -913,7 +913,7 @@ app.post('/payment-success-test', async (req, res) => {
     }
 });
 
-app.get('/payment-success', async (req, res) => {
+app.get('/payment-success-test', async (req, res) => {
     try {
         const { razorpay_payment_id } = req.query;
 
