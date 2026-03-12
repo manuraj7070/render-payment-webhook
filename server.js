@@ -69,17 +69,17 @@ app.use(cors({
 
 // Debug all relevant environment variables
 console.log('🔍 ENVIRONMENT VARIABLES DEBUG:');
-console.log('- RAZORPAY_WEBHOOK_SECRET:', process.env.RAZORPAY_WEBHOOK_SECRET ? '✅ Found' : '❌ Missing');
+//console.log('- RAZORPAY_WEBHOOK_SECRET:', process.env.RAZORPAY_WEBHOOK_SECRET ? '✅ Found' : '❌ Missing');
 console.log('- DATA_DIR:', process.env.DATA_DIR ? `✅ Found (${process.env.DATA_DIR})` : '❌ Missing');
 console.log('- NODE_ENV:', process.env.NODE_ENV);
 console.log('- RAILWAY_PUBLIC_DOMAIN:', process.env.RAILWAY_PUBLIC_DOMAIN ? '✅ Found' : '❌ Missing');
 
 // Also check if variables are accessible
-if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
+/* if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
     console.log('⚠️ WARNING: RAZORPAY_WEBHOOK_SECRET is not set!');
 } else {
     console.log('✅ RAZORPAY_WEBHOOK_SECRET is set (hidden)');
-}
+} */
 
 // Configuration with defaults
 const PORT = process.env.PORT || 3000;
@@ -861,7 +861,7 @@ async function startServer() {
         const server = app.listen(PORT, () => {
             console.log(`🚀 Webhook server running on port ${PORT}`);
             console.log(`📁 Payments file: ${PAYMENTS_FILE}`);
-            console.log(`🔐 Webhook secret: ${WEBHOOK_SECRET ? 'configured' : 'NOT SET'}`);
+            //console.log(`🔐 Webhook secret: ${WEBHOOK_SECRET ? 'configured' : 'NOT SET'}`);
             console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
         });
         
