@@ -6,7 +6,15 @@ const simpleGit = require('simple-git');
 const Razorpay = require('razorpay');
 const axios = require('axios');
 const PORT = process.env.PORT || 3000; // Fallback for local dev
+// MISSING - Add these near the top after your requires
+const MAX_PAYMENTS = 1000; // Maximum number of payments to store
+const PAYMENTS_FILE = path.join(__dirname, 'payments.json');
+const LOG_FILE = path.join(__dirname, 'payments.log');
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
 
+// MISSING - Cache variables
+let paymentsCache = null;
+let lastCacheUpdate = 0;
 
 // No Razorpay initialization here - will be created per request
 
@@ -115,9 +123,72 @@ function getRazorpayInstance(keyId, keySecret) {
     });
 }
 // Save payment with atomic write
+// ============================================
+// File System Helper Functions
+// ============================================
+
+// Ensure directories exist
+async function ensureDirectories() {
+    try {
+        await fs.mkdir(path.dirname(PAYMENTS_FILE), { recursive: true });
+    } catch (error) {
+        console.error('Error creating directories:', error);
+    }
+}
+
+// Load payments with error recovery
+async function loadPayments() {
+    try {
+        console.log(`📂 Attempting to read from: ${PAYMENTS_FILE}`);
+        const data = await fs.readFile(PAYMENTS_FILE, 'utf8');
+        const payments = JSON.parse(data);
+        console.log(`✅ Successfully loaded ${Object.keys(payments).length} payments`);
+        return payments;
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            console.log('📁 No payments file found - starting fresh');
+            return {};
+        }
+        console.error('❌ Error loading payments:', error.message);
+        // Corrupted file - backup and start fresh
+        try {
+            const backupFile = `${PAYMENTS_FILE}.backup.${Date.now()}`;
+            await fs.rename(PAYMENTS_FILE, backupFile);
+            console.log(`⚠️ Corrupted file backed up to ${backupFile}`);
+        } catch (backupError) {
+            console.error('Could not backup corrupted file:', backupError.message);
+        }
+        return {};
+    }
+}
+
+// Modified loadPayments to use cache
+async function getPayments(forceRefresh = false) {
+    const now = Date.now();
+    
+    // Use cache if it's fresh
+    if (!forceRefresh && paymentsCache && (now - lastCacheUpdate < CACHE_TTL)) {
+        console.log('📋 Using cached payments');
+        return paymentsCache;
+    }
+    
+    // Load from file
+    console.log('📂 Loading payments from disk');
+    const payments = await loadPayments();
+    
+    // Update cache
+    paymentsCache = payments;
+    lastCacheUpdate = now;
+    
+    return payments;
+}
+
 // Save payment with atomic write and GitHub sync
 async function savePayment(paymentId, paymentData) {
     try {
+        // Ensure directories exist
+        await ensureDirectories();
+        
         // Load current payments (bypass cache to get latest)
         const payments = await getPayments(true); // Force refresh
         
@@ -161,51 +232,64 @@ async function savePayment(paymentId, paymentData) {
         return false;
     }
 }
-// Modified loadPayments to use cache
-async function getPayments(forceRefresh = false) {
-    const now = Date.now();
-    
-    // Use cache if it's fresh
-    if (!forceRefresh && paymentsCache && (now - lastCacheUpdate < CACHE_TTL)) {
-        console.log('📋 Using cached payments');
-        return paymentsCache;
+
+// GitHub sync function
+async function syncToGitHub() {
+    if (!process.env.GITHUB_TOKEN) {
+        console.log('⚠️ No GitHub token - skipping sync');
+        return;
     }
     
-    // Load from file
-    console.log('📂 Loading payments from disk');
-    const payments = await loadPayments(); // Your existing function
-    
-    // Update cache
-    paymentsCache = payments;
-    lastCacheUpdate = now;
-    
-    return payments;
-}
-// Load payments with error recovery
-// Load payments with error recovery
-async function loadPayments() {
     try {
-        console.log(`📂 Attempting to read from: ${PAYMENTS_FILE}`);
-        const data = await fs.readFile(PAYMENTS_FILE, 'utf8');
-        const payments = JSON.parse(data);
-        console.log(`✅ Successfully loaded ${Object.keys(payments).length} payments`);
-        return payments;
+        console.log('🔄 Syncing to GitHub...');
+        
+        // Check if we're in a git repo
+        const isRepo = await git.checkIsRepo();
+        if (!isRepo) {
+            console.log('📁 Not a git repository - initializing');
+            await git.init();
+        }
+        
+        // Add files
+        await git.add(PAYMENTS_FILE);
+        await git.add(LOG_FILE);
+        
+        // Check if there are changes to commit
+        const status = await git.status();
+        if (status.files.length > 0) {
+            await git.commit(`Auto-sync payments ${new Date().toISOString()}`);
+            
+            // Push to remote if configured
+            try {
+                await git.push('origin', 'main');
+                console.log('✅ GitHub sync complete');
+            } catch (pushError) {
+                console.log('⚠️ Push failed - remote may not be configured');
+            }
+        } else {
+            console.log('📝 No changes to sync');
+        }
     } catch (error) {
-        if (error.code === 'ENOENT') {
-            console.log('📁 No payments file found - starting fresh');
-            return {};
-        }
-        console.error('❌ Error loading payments:', error.message);
-        // Corrupted file - backup and start fresh
-        try {
-            const backupFile = `${PAYMENTS_FILE}.backup.${Date.now()}`;
-            await fs.rename(PAYMENTS_FILE, backupFile);
-            console.log(`⚠️ Corrupted file backed up to ${backupFile}`);
-        } catch (backupError) {
-            console.error('Could not backup corrupted file:', backupError.message);
-        }
-        return {};
+        console.error('❌ GitHub sync error:', error.message);
     }
+}
+
+// Graceful shutdown
+async function gracefulShutdown(signal) {
+    console.log(`\n${signal} received. Starting graceful shutdown...`);
+    
+    // Close server
+    if (global.server) {
+        global.server.close(() => {
+            console.log('✅ HTTP server closed');
+        });
+    }
+    
+    // Give time for background tasks to complete
+    setTimeout(() => {
+        console.log('👋 Shutdown complete');
+        process.exit(0);
+    }, 2000);
 }
 // ============================================
 // NEW ENDPOINT: Create Razorpay Order (with credentials in payload)
