@@ -27,6 +27,8 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Reason:', reason);
 });
 
+const app = express();
+
 // Add request logging middleware right after CORS
 app.use((req, res, next) => {
     console.log(`📥 ${req.method} ${req.url} - ${new Date().toISOString()}`);
@@ -65,7 +67,7 @@ const git = simpleGit({
         console.log('⚠️ Continuing without Git functionality');
     }
 })();
-const app = express();
+
 app.use(express.json({ limit: '1mb' }));
 
 const cors = require('cors');
@@ -112,7 +114,99 @@ function getRazorpayInstance(keyId, keySecret) {
         key_secret: keySecret
     });
 }
-
+// Save payment with atomic write
+// Save payment with atomic write and GitHub sync
+async function savePayment(paymentId, paymentData) {
+    try {
+        // Load current payments (bypass cache to get latest)
+        const payments = await getPayments(true); // Force refresh
+        
+        // Prevent unlimited growth
+        if (Object.keys(payments).length >= MAX_PAYMENTS) {
+            // Remove oldest payment
+            const oldest = Object.entries(payments)
+                .sort((a, b) => new Date(a[1].timestamp) - new Date(b[1].timestamp))[0];
+            if (oldest) {
+                delete payments[oldest[0]];
+                console.log(`⚠️ Removed oldest payment: ${oldest[0]}`);
+            }
+        }
+        
+        // Add new payment
+        payments[paymentId] = {
+            ...paymentData,
+            timestamp: paymentData.timestamp || new Date().toISOString(),
+            receivedAt: new Date().toISOString()
+        };
+        
+        // Atomic write - write to temp file then rename
+        const tempFile = `${PAYMENTS_FILE}.tmp`;
+        await fs.writeFile(tempFile, JSON.stringify(payments, null, 2));
+        await fs.rename(tempFile, PAYMENTS_FILE);
+        
+        // Append to log file (non-critical, can fail silently)
+        try {
+            const logEntry = `${new Date().toISOString()},${paymentId},${paymentData.event || 'unknown'}\n`;
+            await fs.appendFile(LOG_FILE, logEntry);
+        } catch (logError) {
+            console.error('Log write failed (non-critical):', logError.message);
+        }
+        
+        // Trigger GitHub sync in background (don't await)
+        syncToGitHub().catch(err => console.error('Background sync error:', err));
+        
+        return true;
+    } catch (error) {
+        console.error('Failed to save payment:', error.message);
+        return false;
+    }
+}
+// Modified loadPayments to use cache
+async function getPayments(forceRefresh = false) {
+    const now = Date.now();
+    
+    // Use cache if it's fresh
+    if (!forceRefresh && paymentsCache && (now - lastCacheUpdate < CACHE_TTL)) {
+        console.log('📋 Using cached payments');
+        return paymentsCache;
+    }
+    
+    // Load from file
+    console.log('📂 Loading payments from disk');
+    const payments = await loadPayments(); // Your existing function
+    
+    // Update cache
+    paymentsCache = payments;
+    lastCacheUpdate = now;
+    
+    return payments;
+}
+// Load payments with error recovery
+// Load payments with error recovery
+async function loadPayments() {
+    try {
+        console.log(`📂 Attempting to read from: ${PAYMENTS_FILE}`);
+        const data = await fs.readFile(PAYMENTS_FILE, 'utf8');
+        const payments = JSON.parse(data);
+        console.log(`✅ Successfully loaded ${Object.keys(payments).length} payments`);
+        return payments;
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            console.log('📁 No payments file found - starting fresh');
+            return {};
+        }
+        console.error('❌ Error loading payments:', error.message);
+        // Corrupted file - backup and start fresh
+        try {
+            const backupFile = `${PAYMENTS_FILE}.backup.${Date.now()}`;
+            await fs.rename(PAYMENTS_FILE, backupFile);
+            console.log(`⚠️ Corrupted file backed up to ${backupFile}`);
+        } catch (backupError) {
+            console.error('Could not backup corrupted file:', backupError.message);
+        }
+        return {};
+    }
+}
 // ============================================
 // NEW ENDPOINT: Create Razorpay Order (with credentials in payload)
 // ============================================
