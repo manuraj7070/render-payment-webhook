@@ -9,6 +9,10 @@ const simpleGit = require('simple-git');
 const linkToPaymentMap = {};
 const { execSync } = require('child_process');
 
+console.log('🔥 SERVER STARTING AT:', new Date().toISOString());
+console.log('📦 Node version:', process.version);
+console.log('🔧 Environment:', process.env.RAZORPAY_MODE || 'not set');
+
 // Initialize on startup
 let GITHUB_READY = false;
 // Error handling for uncaught exceptions
@@ -464,6 +468,17 @@ async function savePaymentX(paymentId, paymentData) {
         return false;
     }
 }
+
+// Add this BEFORE any other routes
+app.get('/api/test', (req, res) => {
+    console.log('✅ Test endpoint hit at:', new Date().toISOString());
+    res.json({ 
+        success: true, 
+        message: 'Server is running!',
+        time: new Date().toISOString()
+    });
+});
+
 // ============================================
 // Save Payment Data with Customer Details
 // ============================================
