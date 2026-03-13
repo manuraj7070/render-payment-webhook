@@ -266,11 +266,10 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
         'http://localhost:8080',  // For local testing
         'http://localhost:3000',
         // Add ALL possible Google embed domains
-        /\.googleusercontent\.com$/,  // This matches ANY subdomain of googleusercontent.com
-        /\.google\.com$/,              // This matches ANY subdomain of google.com
-        'https://1971649687-atari-embeds.googleusercontent.com',  // Your specific one
-        'https://*.googleusercontent.com'  // Wildcard pattern
-      ]; 
+        // Use proper regex for Google domains
+        /^https:\/\/[a-zA-Z0-9-]+\.googleusercontent\.com$/,  // Matches ANY subdomain
+        /^https:\/\/[a-zA-Z0-9-]+\.google\.com$/              // Matches ANY subdomain
+    ]; 
 
 console.log('🔓 Allowed CORS origins:', allowedOrigins);
 
@@ -305,8 +304,6 @@ app.use(cors({
             callback(new Error(`Origin ${origin} not allowed by CORS`));
         }
     },
-    methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
     credentials: true,
     optionsSuccessStatus: 200
 }));
@@ -315,7 +312,21 @@ app.use(cors({
 app.options('*', cors());
 app.use(express.json({ limit: '1mb' })); // Limit payload size
 
-
+// Add explicit CORS headers for all responses
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && (
+        origin.includes('.googleusercontent.com') || 
+        origin.includes('.google.com') ||
+        allowedOrigins.includes(origin)
+    )) {
+        res.header('Access-Control-Allow-Origin', origin);
+        res.header('Access-Control-Allow-Credentials', 'true');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
+        res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    }
+    next();
+});
 // Enable CORS for all routes
 // app.use(cors());
 
