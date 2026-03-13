@@ -125,7 +125,9 @@ async function savePayment(paymentId, paymentData) {
     try {
         // Load current payments
         const payments = await getPayments(true);
-        
+        console.log('📝 savePayment called for:', paymentId);
+        console.log('📁 Target file:', PAYMENTS_FILE);
+                
         // Add new payment
         payments[paymentId] = {
             ...paymentData,
@@ -795,8 +797,11 @@ app.post('/webhooktest', async (req, res) => {
             };
 
             // Save to storage
-            const saved = await savePayment(paymentId, paymentData);
             
+            console.log('💰 About to save payment:', paymentId);
+            const saved = await savePayment(paymentId, paymentData);
+            console.log('✅ Save result:', saved ? 'success' : 'failed');
+
             const processingTime = Date.now() - startTime;
             console.log(`✅ Processed ${paymentId} in ${processingTime}ms`);
 
