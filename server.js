@@ -3,6 +3,7 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const Razorpay = require('razorpay');
+const cors = require('cors');
 const axios = require('axios');
 const simpleGit = require('simple-git');
 // In-memory store for payment link mappings (add this near other variables)
@@ -262,7 +263,6 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
         'https://innershiftnirvaana.space',
         'https://pay.innershiftnirvaana.space',  // ← ADD THIS LINE
         'https://588380366-atari-embeds.googleusercontent.com',
-        'https://*.googleusercontent.com',
         'http://localhost:8080',  // For local testing
         'http://localhost:3000',
         // Add ALL possible Google embed domains
@@ -315,7 +315,6 @@ app.use(cors({
 app.options('*', cors());
 app.use(express.json({ limit: '1mb' })); // Limit payload size
 
-const cors = require('cors');
 
 // Enable CORS for all routes
 // app.use(cors());
