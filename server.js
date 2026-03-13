@@ -341,7 +341,7 @@ async function getPayments(forceRefresh = false) {
     
     // Load from file
     console.log('📂 Loading payments from disk');
-    const payments = await loadPaymentsX(); // Your existing function
+    const payments = await loadPayments(); // Your existing function
     
     // Update cache
     paymentsCache = payments;
@@ -769,7 +769,7 @@ app.post('/webhooktest', async (req, res) => {
             };
 
             // Save to storage
-            const saved = await savePaymentX(paymentId, paymentData);
+            const saved = await savePayment(paymentId, paymentData);
             
             const processingTime = Date.now() - startTime;
             console.log(`✅ Processed ${paymentId} in ${processingTime}ms`);
@@ -990,7 +990,7 @@ app.post('/webhook', async (req, res) => {
             console.log(`🆔 Order ID: ${paymentData.orderId}`);
 
             // Save to persistent storage
-            const saved = await savePaymentX(paymentId, paymentData);
+            const saved = await savePayment(paymentId, paymentData);
             if (!saved) {
                 console.error(`⚠️ Payment ${paymentId} received but not saved`);
             }
@@ -1234,7 +1234,7 @@ app.get('/verify/:paymentId', async (req, res) => {
             });
         }
         
-        const payments = await loadPaymentsX();
+        const payments = await loadPayments();
         
         await ensureWritableFile();
         console.log(`📁 Current PAYMENTS_FILE: ${PAYMENTS_FILE}`);
@@ -1430,7 +1430,7 @@ async function startServer() {
             }
             
             // Load payments
-            const payments = await loadPaymentsX();
+            const payments = await loadPayments();
             paymentsCache = payments;
             lastCacheUpdate = Date.now();
             
