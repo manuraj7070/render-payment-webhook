@@ -35,7 +35,9 @@ const LOCAL_REPO_PATH = path.join(__dirname, 'repo-cache');
 const GIT_REPO = process.env.GITHUB_REPO || 'manuraj7070/render-payment-webhook';
 const GIT_BRANCH = process.env.GITHUB_BRANCH || 'main';
 const GIT_TOKEN = process.env.GITHUB_TOKEN;
-
+// Change from /tmp to the repo-cache path
+const PAYMENTS_FILE = path.join(LOCAL_REPO_PATH, 'payments.json');
+const LOG_FILE = path.join(LOCAL_REPO_PATH, 'webhook.log');
 
 // Initialize git repository if it doesn't exist
 function initGitRepo() {
@@ -280,8 +282,8 @@ console.log('- RAILWAY_PUBLIC_DOMAIN:', process.env.RAILWAY_PUBLIC_DOMAIN ? '✅
 const PORT = process.env.PORT || 3000;
 const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
 const DATA_DIR = process.env.DATA_DIR || '/tmp';
-let PAYMENTS_FILE = path.join(DATA_DIR, 'payments.json');
-let LOG_FILE = path.join(DATA_DIR, 'webhook.log');
+//let PAYMENTS_FILE = path.join(DATA_DIR, 'payments.json');
+//let LOG_FILE = path.join(DATA_DIR, 'webhook.log');
 // Add this near the top with other variables
 let paymentsCache = null;  // In-memory cache
 let lastCacheUpdate = 0;
@@ -1457,14 +1459,14 @@ async function gracefulShutdown(signal) {
 async function startServer() {
     try {
         // Force /tmp if writable is false
-        try {
+/*         try {
             await fs.access('/tmp', fs.constants.W_OK);
             PAYMENTS_FILE = '/tmp/payments.json';
             LOG_FILE = '/tmp/webhook.log';
             console.log(`📁 Using /tmp for storage`);
         } catch (e) {
             console.error('❌ Even /tmp is not writable!');
-        }        
+        }      */   
 
 
         try{
