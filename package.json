@@ -4,8 +4,8 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "apt-get update && apt-get install -y git && node server.js",
+    "railway-start": "node server.js"
   },
   "keywords": [],
   "author": "",
