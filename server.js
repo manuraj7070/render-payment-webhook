@@ -346,8 +346,7 @@ console.log('- RAILWAY_PUBLIC_DOMAIN:', process.env.RAILWAY_PUBLIC_DOMAIN ? '✅
 const PORT = process.env.PORT || 3000;
 const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
 const DATA_DIR = process.env.DATA_DIR || '/tmp';
-//let PAYMENTS_FILE = path.join(DATA_DIR, 'payments.json');
-//let LOG_FILE = path.join(DATA_DIR, 'webhook.log');
+
 // Add this near the top with other variables
 let paymentsCache = null;  // In-memory cache
 let lastCacheUpdate = 0;
