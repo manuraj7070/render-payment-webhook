@@ -8,7 +8,7 @@ const simpleGit = require('simple-git');
 // In-memory store for payment link mappings (add this near other variables)
 const linkToPaymentMap = {};
 const { execSync } = require('child_process');
-const fs = require('fs');
+//const fs = require('fs');
 const path = require('path');
 // Initialize on startup
 let GITHUB_READY = false;
