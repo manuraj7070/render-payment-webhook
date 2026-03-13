@@ -161,6 +161,13 @@
     "userAgent": "Razorpay-Webhook/v1",
     "paymentPageId": "N/A",
     "timestamp": "2026-03-13T17:42:53.287Z",
-    "receivedAt": "2026-03-13T17:42:53.290Z"
+    "receivedAt": "2026-03-13T17:43:06.752Z",
+    "customerName": "Manohar Saini",
+    "customerEmail": "manuraj7070@protonmail.com",
+    "customerPhone": "+919029953367",
+    "workshopName": "Addiction Healing Workshop",
+    "workshopDate": "2026-03-13",
+    "whatsappLinkGenerated": true,
+    "whatsappLinkGeneratedAt": "2026-03-13T17:43:06.751Z"
   }
 }
