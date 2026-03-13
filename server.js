@@ -7,305 +7,7 @@ const axios = require('axios');
 const simpleGit = require('simple-git');
 // In-memory store for payment link mappings (add this near other variables)
 const linkToPaymentMap = {};
-const { execSync } = require('child_process');
-//const fs = require('fs');
-//const path = require('path');
-// Initialize on startup
-let GITHUB_READY = false;
 
-console.log('🚀 Server starting...');
-console.log('Node version:', process.version);
-console.log('Environment:', process.env.NODE_ENV);
-console.log('GITHUB_TOKEN exists:', !!process.env.GITHUB_TOKEN);
-
-const GITHUB_TOKEN=process.env.GITHUB_TOKEN
-const GITHUB_REPO=manuraj7070/render-payment-webhook
-const GITHUB_BRANCH=main
-// Configuration
-const GIT_REPO = process.env.GITHUB_REPO || 'manuraj7070/render-payment-webhook';
-const GIT_BRANCH = process.env.GITHUB_BRANCH || 'main';
-const GIT_TOKEN = process.env.GITHUB_TOKEN;
-const REPO_URL = `https://manuraj7070:${GIT_TOKEN}@github.com/${GIT_REPO}.git`;
-const LOCAL_REPO_PATH = path.join(__dirname, 'repo-cache');
-
-// Initialize git repository if it doesn't exist
-function initGitRepo() {
-    try {
-        // Check if .git directory exists
-        if (!fs.existsSync(path.join(__dirname, '.git'))) {
-            console.log('📁 Initializing git repository...');
-            execSync('git init', { stdio: 'inherit' });
-            execSync('git config --global user.email "manuraj7070@users.noreply.github.com"', { stdio: 'inherit' });
-            execSync('git config --global user.name "manuraj7070"', { stdio: 'inherit' });
-            execSync('git remote add origin https://manuraj7070:${process.env.GITHUB_TOKEN}@github.com/manuraj7070/render-payment-webhook.git', { stdio: 'inherit' });
-            console.log('✅ Git repository initialized');
-        }
-        
-        // Pull latest changes
-        try {
-            execSync('git pull origin main --rebase', { stdio: 'inherit' });
-            console.log('✅ Synced with GitHub');
-        } catch (pullError) {
-            console.log('⚠️ Could not pull from GitHub:', pullError.message);
-        }
-        
-        return true;
-    } catch (error) {
-        console.log('⚠️ Git initialization failed:', error.message);
-        return false;
-    }
-}
-
-// Call this in your startServer function
-const GIT_AVAILABLE = initGitRepo();
-
-
-
-// Initialize git repository for storage
-// Initialize git repository for storage
-async function initGitStorageX() {
-    if (!GITHUB_TOKEN) {
-        console.log('⚠️ GITHUB_TOKEN not set - GitHub sync disabled');
-        return false;
-    }
-
-    try {
-        // Create repo-cache directory if it doesn't exist
-        await fs.mkdir(LOCAL_REPO_PATH, { recursive: true });
-        
-        // Check if already cloned
-        try {
-            await fs.access(path.join(LOCAL_REPO_PATH, '.git'));
-            console.log('📁 Git repository exists, pulling latest...');
-            
-            // Pull latest changes
-            const pullResult = execSync(`cd ${LOCAL_REPO_PATH} && git pull`, { 
-                encoding: 'utf8',
-                stdio: 'pipe' 
-            });
-            console.log('📥 Pull result:', pullResult.trim());
-            
-        } catch (err) {
-            // Clone the repository
-            console.log('📦 Cloning repository...');
-            const cloneResult = execSync(`git clone ${REPO_URL} ${LOCAL_REPO_PATH}`, { 
-                encoding: 'utf8',
-                stdio: 'pipe' 
-            });
-            console.log('✅ Clone successful');
-        }
-        
-        // Configure git user for commits
-        execSync(`cd ${LOCAL_REPO_PATH} && git config user.email "manuraj7070@users.noreply.github.com"`, { stdio: 'ignore' });
-        execSync(`cd ${LOCAL_REPO_PATH} && git config user.name "manuraj7070"`, { stdio: 'ignore' });
-        
-        console.log('✅ GitHub storage initialized');
-        return true;
-        
-    } catch (error) {
-        console.error('❌ Failed to initialize GitHub storage:', error.message);
-        return false;
-    }
-}
-// Initialize git repository for storage
-async function initGitStorageXX() {
-    if (!GITHUB_TOKEN) {
-        console.log('⚠️ GITHUB_TOKEN not set - GitHub sync disabled');
-        return false;
-    }
-
-    try {
-        // Create repo-cache directory
-        await fs.mkdir(LOCAL_REPO_PATH, { recursive: true });
-        
-        // Check if already cloned
-        try {
-            await fs.access(path.join(LOCAL_REPO_PATH, '.git'));
-            console.log('📁 Git repository exists, pulling latest...');
-            
-            // Pull latest changes
-            execSync(`cd ${LOCAL_REPO_PATH} && git pull`, { 
-                encoding: 'utf8',
-                stdio: 'inherit' 
-            });
-            
-        } catch (err) {
-            // Clone the repository
-            console.log('📦 Cloning repository...');
-            execSync(`git clone ${REPO_URL} ${LOCAL_REPO_PATH}`, { 
-                encoding: 'utf8',
-                stdio: 'inherit' 
-            });
-            console.log('✅ Clone successful');
-        }
-        
-        // Configure git user
-        execSync(`cd ${LOCAL_REPO_PATH} && git config user.email "manuraj7070@users.noreply.github.com"`, { stdio: 'inherit' });
-        execSync(`cd ${LOCAL_REPO_PATH} && git config user.name "manuraj7070"`, { stdio: 'inherit' });
-        
-        console.log('✅ GitHub storage initialized');
-        return true;
-        
-    } catch (error) {
-        console.error('❌ Failed to initialize GitHub storage:', error.message);
-        return false;
-    }
-}
-
-//initGitStorage with more debugß
-async function initGitStorage() {
-    console.log('🔧 Initializing GitHub storage...');
-    
-    if (!process.env.GITHUB_TOKEN) {
-        console.log('❌ GITHUB_TOKEN missing');
-        return false;
-    }
-    
-    console.log('✅ GITHUB_TOKEN found, length:', process.env.GITHUB_TOKEN.length);
-    
-    try {
-        console.log('📁 Creating directory:', LOCAL_REPO_PATH);
-        await fs.mkdir(LOCAL_REPO_PATH, { recursive: true });
-        
-        // Check if already cloned
-        const gitDir = path.join(LOCAL_REPO_PATH, '.git');
-        const gitExists = await fs.access(gitDir).then(() => true).catch(() => false);
-        
-        if (gitExists) {
-            console.log('📁 Git repo exists, pulling...');
-            execSync(`cd ${LOCAL_REPO_PATH} && git pull`, { stdio: 'inherit' });
-        } else {
-            console.log('📦 Cloning repository...');
-            const repoUrl = `https://manuraj7070:${process.env.GITHUB_TOKEN}@github.com/manuraj7070/render-payment-webhook.git`;
-            execSync(`git clone ${repoUrl} ${LOCAL_REPO_PATH}`, { stdio: 'inherit' });
-        }
-        
-        console.log('✅ GitHub storage ready');
-        return true;
-        
-    } catch (error) {
-        console.error('❌ GitHub init failed:', error.message);
-        return false;
-    }
-}
-// Enhanced savePayment with GitHub sync
-// Save payment with GitHub sync
-async function savePaymentXX(paymentId, paymentData) {
-    try {
-        // Load current payments
-        const payments = await getPayments(true);
-        
-        // Add new payment
-        payments[paymentId] = {
-            ...paymentData,
-            timestamp: paymentData.timestamp || new Date().toISOString(),
-            receivedAt: new Date().toISOString()
-        };
-        
-        // Save to file in repo
-        await fs.writeFile(PAYMENTS_FILE, JSON.stringify(payments, null, 2));
-        console.log(`✅ Payment ${paymentId} saved locally`);
-        
-        // Commit and push to GitHub if token exists
-        if (GITHUB_TOKEN) {
-            try {
-                // Commit the change
-                execSync(`
-                    cd ${LOCAL_REPO_PATH} &&
-                    git add payments.json &&
-                    git commit -m "💾 Add payment ${paymentId}" --allow-empty &&
-                    git push
-                `, { stdio: 'pipe' });
-                
-                console.log(`✅ Payment ${paymentId} synced to GitHub`);
-            } catch (gitError) {
-                console.error('⚠️ GitHub sync failed:', gitError.message);
-                // Don't fail - payment is still saved locally
-            }
-        }
-        
-        return true;
-        
-    } catch (error) {
-        console.error('❌ Failed to save payment:', error.message);
-        return false;
-    }
-}
-// Save payment with GitHub sync
-async function savePayment(paymentId, paymentData) {
-    try {
-        // Load current payments
-        const payments = await getPayments(true);
-        
-        // Add new payment
-        payments[paymentId] = {
-            ...paymentData,
-            timestamp: paymentData.timestamp || new Date().toISOString(),
-            receivedAt: new Date().toISOString()
-        };
-        
-        // Save to file in repo
-        await fs.writeFile(PAYMENTS_FILE, JSON.stringify(payments, null, 2));
-        console.log(`✅ Payment ${paymentId} saved locally`);
-        
-        // Commit and push to GitHub
-        if (GITHUB_TOKEN) {
-            try {
-                execSync(`
-                    cd ${LOCAL_REPO_PATH} &&
-                    git add payments.json &&
-                    git commit -m "💾 Add payment ${paymentId}" --allow-empty &&
-                    git push
-                `, { stdio: 'inherit' });
-                
-                console.log(`✅ Payment ${paymentId} synced to GitHub`);
-            } catch (gitError) {
-                console.error('⚠️ GitHub sync failed:', gitError.message);
-                // Don't fail - payment is still saved locally
-            }
-        }
-        
-        return true;
-        
-    } catch (error) {
-        console.error('❌ Failed to save payment:', error.message);
-        return false;
-    }
-}
-// Load payments with GitHub backup
-// Load payments with GitHub backup
-async function loadPayments() {
-    // First try local file in repo
-    try {
-        const data = await fs.readFile(PAYMENTS_FILE, 'utf8');
-        const payments = JSON.parse(data);
-        console.log(`✅ Loaded ${Object.keys(payments).length} payments from local`);
-        return payments;
-        
-    } catch (localError) {
-        console.log('No local payments file found');
-        
-        // If GitHub token exists, try to pull from GitHub
-        if (GITHUB_TOKEN) {
-            try {
-                // Pull latest from GitHub
-                execSync(`cd ${LOCAL_REPO_PATH} && git pull`, { stdio: 'pipe' });
-                
-                // Try reading again after pull
-                const data = await fs.readFile(PAYMENTS_FILE, 'utf8');
-                const payments = JSON.parse(data);
-                console.log(`✅ Loaded ${Object.keys(payments).length} payments from GitHub`);
-                return payments;
-                
-            } catch (githubError) {
-                console.log('No payments found on GitHub either');
-            }
-        }
-        
-        // Start fresh
-        return {};
-    }
-}
 
 
 // Initialize git with token
@@ -430,7 +132,7 @@ async function ensureWritableFile() {
 
 // Load payments with error recovery
 // Load payments with error recovery
-async function loadPaymentsX() {
+async function loadPayments() {
     try {
         console.log(`📂 Attempting to read from: ${PAYMENTS_FILE}`);
         const data = await fs.readFile(PAYMENTS_FILE, 'utf8');
@@ -454,7 +156,7 @@ async function loadPaymentsX() {
         return {};
     }
 }
-// Modified getPayments to use cache
+// Modified loadPayments to use cache
 async function getPayments(forceRefresh = false) {
     const now = Date.now();
     
@@ -496,7 +198,7 @@ async function syncToGitHub() {
 }
 // Save payment with atomic write
 // Save payment with atomic write and GitHub sync
-async function savePaymentX(paymentId, paymentData) {
+async function savePayment(paymentId, paymentData) {
     try {
         // Load current payments (bypass cache to get latest)
         const payments = await getPayments(true); // Force refresh
@@ -1293,7 +995,7 @@ app.get('/payment-success', async (req, res) => {
 
 // Add this endpoint to get recent payments
 // Replace your recent-payments endpoint with:
-app.get('/recent-paymentsX', async (req, res) => {
+app.get('/recent-payments', async (req, res) => {
     try {
         console.log('📊 Recent payments requested');
         console.log('Origin:', req.headers.origin);
@@ -1341,32 +1043,7 @@ app.get('/recent-paymentsX', async (req, res) => {
         });
     }
 });
-app.get('/recent-payments', async (req, res) => {
-    try {
-        console.log('📊 Recent payments requested');
-        
-        const payments = await getPayments(true);
-        
-        if (!payments) {
-            return res.json({ count: 0, payments: [] });
-        }
-        
-        const paymentsArray = Object.entries(payments);
-        const recent = paymentsArray
-            .map(([id, data]) => ({
-                paymentId: id,
-                timestamp: data?.timestamp || new Date().toISOString(),
-                amount: data?.amount || 0
-            }))
-            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
-            .slice(0, 5);
-        
-        res.json({ count: recent.length, payments: recent });
-    } catch (error) {
-        console.error('❌ Recent payments error:', error.message);
-        res.status(500).json({ count: 0, payments: [] });
-    }
-});
+
 // Verify payment endpoint
 app.get('/verify/:paymentId', async (req, res) => {
     try {
@@ -1445,7 +1122,7 @@ app.get('/admin/payments', async (req, res) => {
 });
 
 // Health check with system info
-app.get('/healthX', async (req, res) => {
+app.get('/health', async (req, res) => {
     try {
         // Health check - use cache
         const payments = await getPayments();
@@ -1481,21 +1158,6 @@ app.get('/healthX', async (req, res) => {
         });
     }
 });
-app.get('/health', async (req, res) => {
-    try {
-        const payments = await getPayments();
-        res.json({
-            status: 'ok',
-            time: new Date().toISOString(),
-            uptime: Math.floor(process.uptime()),
-            payments: Object.keys(payments).length,
-            node: process.version
-        });
-    } catch (error) {
-        res.status(500).json({ status: 'error', error: error.message });
-    }
-});
-
 // Add this to check webhook status
 app.get('/diagnostic', async (req, res) => {
     try {
@@ -1575,33 +1237,8 @@ async function startServer() {
         } catch (e) {
             console.error('❌ Even /tmp is not writable!');
         }        
-
-
-        try{
-            // Initialize GitHub storage
-            // Create repo directory
-            await fs.mkdir(LOCAL_REPO_PATH, { recursive: true });
-            
-            // Initialize GitHub storage
-            const GITHUB_READY = await initGitStorage();
-            if (GITHUB_READY) {
-                console.log('✅ GitHub storage ready');
-            } else {
-                console.log('⚠️ Running with local storage only');
-            }
-            
-            // Load payments
-            const payments = await loadPayments();
-            paymentsCache = payments;
-            lastCacheUpdate = Date.now();
-            
-            console.log(`✅ Loaded ${Object.keys(payments).length} existing payments`);
-            
-        } catch (e) {
-            console.error('❌ failed to initialize github storage:', e.message);
-        }   
         
-/*         // After forcing /tmp, test writability
+        // After forcing /tmp, test writability
         try {
             await fs.access('/tmp', fs.constants.W_OK);
             console.log('✅ /tmp is writable');
@@ -1638,7 +1275,7 @@ async function startServer() {
         lastCacheUpdate = Date.now();
         
         console.log(`✅ Loaded ${Object.keys(payments).length} existing payments`);
-         */
+        
         // Start server
         const server = app.listen(PORT, () => {
             console.log(`🚀 Webhook server running on port ${PORT}`);
