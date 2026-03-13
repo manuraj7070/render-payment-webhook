@@ -12,15 +12,16 @@ const { execSync } = require('child_process');
 // Initialize on startup
 let GITHUB_READY = false;
 
-const GITHUB_TOKEN=process.env.GITHUB_TOKEN
-const GITHUB_REPO=manuraj7070/render-payment-webhook
-const GITHUB_BRANCH=main
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+const GITHUB_REPO = 'manuraj7070/render-payment-webhook';
+const GITHUB_BRANCH = 'main';
+const REPO_URL = `https://manuraj7070:${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git`;
+const LOCAL_REPO_PATH = path.join(__dirname, 'repo-cache');
 // Configuration
 const GIT_REPO = process.env.GITHUB_REPO || 'manuraj7070/render-payment-webhook';
 const GIT_BRANCH = process.env.GITHUB_BRANCH || 'main';
 const GIT_TOKEN = process.env.GITHUB_TOKEN;
-const REPO_URL = `https://manuraj7070:${GIT_TOKEN}@github.com/${GIT_REPO}.git`;
-const LOCAL_REPO_PATH = path.join(__dirname, 'repo-cache');
+
 
 // Initialize git repository if it doesn't exist
 function initGitRepo() {
