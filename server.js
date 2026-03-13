@@ -1476,7 +1476,7 @@ async function startServer() {
          */
         
         // Start server
-        const server = app.listen(port, "0.0.0.0", () => {
+        const server = app.listen(PORT, "0.0.0.0", () => {
             console.log(`🚀 Webhook server running on port ${PORT}`);
             console.log(`📁 Payments file: ${PAYMENTS_FILE}`);
             //console.log(`🔐 Webhook secret: ${WEBHOOK_SECRET ? 'configured' : 'NOT SET'}`);
