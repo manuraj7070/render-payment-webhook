@@ -252,8 +252,6 @@ const app = express();
 
 // Or more specifically, allow only your GitHub domain
 // Get allowed origins from environment variable
-// Get allowed origins from environment variable
-// Get allowed origins - add the specific Google embed domain
 // Get allowed origins - add the specific Google embed domain
 const allowedOrigins = process.env.ALLOWED_ORIGINS 
     ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
