@@ -995,7 +995,7 @@ app.get('/payment-success', async (req, res) => {
 
 // Add this endpoint to get recent payments
 // Replace your recent-payments endpoint with:
-app.get('/api/recent-payments', async (req, res) => {
+app.get('/recent-payments', async (req, res) => {
     try {
         console.log('📊 Recent payments requested');
         console.log('Origin:', req.headers.origin);
