@@ -11,7 +11,21 @@ const { execSync } = require('child_process');
 
 // Initialize on startup
 let GITHUB_READY = false;
+// Error handling for uncaught exceptions
+process.on('uncaughtException', (error) => {
+    console.error('🔥 Uncaught Exception:', error);
+    console.error(error.stack);
+    // Keep running - don't crash on errors
+});
 
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('🔥 Unhandled Rejection at:', promise);
+    console.error('Reason:', reason);
+});
+
+// Shutdown handlers
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
 const GITHUB_REPO = 'manuraj7070/render-payment-webhook';
 const GITHUB_BRANCH = 'main';
@@ -1367,6 +1381,10 @@ app.get('/debug/check-file', async (req, res) => {
         res.json({ error: error.message });
     }
 });
+// Add a simple keep-alive endpoint
+app.get('/ping', (req, res) => {
+    res.json({ status: 'alive', time: new Date().toISOString() });
+});
 
 // Graceful shutdown
 async function gracefulShutdown(signal) {
@@ -1385,21 +1403,7 @@ async function gracefulShutdown(signal) {
     }, 10000);
 }
 
-// Error handling for uncaught exceptions
-process.on('uncaughtException', (error) => {
-    console.error('🔥 Uncaught Exception:', error);
-    console.error(error.stack);
-    // Keep running - don't crash on errors
-});
 
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('🔥 Unhandled Rejection at:', promise);
-    console.error('Reason:', reason);
-});
-
-// Shutdown handlers
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Initialize and start server
 // Initialize and start server
@@ -1486,6 +1490,27 @@ async function startServer() {
             //console.log(`🔐 Webhook secret: ${WEBHOOK_SECRET ? 'configured' : 'NOT SET'}`);
             console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
         });
+
+        // ===== ADD KEEP-ALIVE CODE HERE =====
+        // Ping the server every minute to keep the connection alive
+        setInterval(() => {
+            const http = require('http');
+            http.get(`http://localhost:${PORT}/ping`, (res) => {
+                console.log('💓 Keep-alive ping sent');
+            }).on('error', (err) => {
+                // Ignore errors - server might be starting
+            });
+        }, 60000); // 60 seconds
+        
+        // Also add a simple ping endpoint
+        app.get('/ping', (req, res) => {
+            res.json({ 
+                status: 'alive', 
+                time: new Date().toISOString(),
+                uptime: process.uptime()
+            });
+        });
+        // ===== END KEEP-ALIVE CODE =====
         
         // Export server for graceful shutdown
         global.server = server;
