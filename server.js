@@ -127,7 +127,7 @@ async function savePayment(paymentId, paymentData) {
         const payments = await getPayments(true);
         console.log('📝 savePayment called for:', paymentId);
         console.log('📁 Target file:', PAYMENTS_FILE);
-                
+
         // Add new payment
         payments[paymentId] = {
             ...paymentData,
@@ -444,7 +444,208 @@ async function savePaymentX(paymentId, paymentData) {
         return false;
     }
 }
+// ============================================
+// Save Payment Data with Customer Details
+// ============================================
+app.post('/api/save-payment-details', async (req, res) => {
+    try {
+        const { 
+            paymentId,
+            customerName,
+            customerEmail,
+            customerPhone,
+            orderId,
+            amount,
+            workshopName,
+            workshopDate
+        } = req.body;
 
+        if (!paymentId || !customerName || !customerPhone) {
+            return res.status(400).json({
+                success: false,
+                error: 'Payment ID, customer name and phone are required'
+            });
+        }
+
+        // Load existing payments
+        const payments = await getPayments(true);
+        
+        // Update or create payment record
+        if (payments[paymentId]) {
+            payments[paymentId] = {
+                ...payments[paymentId],
+                customerName,
+                customerEmail: customerEmail || payments[paymentId].email,
+                customerPhone,
+                orderId: orderId || payments[paymentId].orderId,
+                amount: amount || payments[paymentId].amount,
+                workshopName: workshopName || 'Workshop Registration',
+                workshopDate: workshopDate || new Date().toISOString().split('T')[0],
+                whatsappLinkGenerated: true,
+                whatsappLinkGeneratedAt: new Date().toISOString()
+            };
+        } else {
+            // New payment record
+            payments[paymentId] = {
+                paymentId,
+                customerName,
+                customerEmail: customerEmail || 'Not provided',
+                customerPhone,
+                orderId: orderId || 'N/A',
+                amount: amount || 0,
+                workshopName: workshopName || 'Workshop Registration',
+                workshopDate: workshopDate || new Date().toISOString().split('T')[0],
+                status: 'completed',
+                timestamp: new Date().toISOString(),
+                whatsappLinkGenerated: true,
+                whatsappLinkGeneratedAt: new Date().toISOString()
+            };
+        }
+
+        // Save to file
+        await savePayment(paymentId, payments[paymentId]);
+        
+        // Generate WhatsApp link
+        const whatsappMessage = encodeURIComponent(
+            `Hello ${customerName}! Thank you for registering for ${workshopName || 'the workshop'}. ` +
+            `Your payment ID is ${paymentId}. Click here to join the WhatsApp group.`
+        );
+        const whatsappLink = `https://wa.me/${customerPhone}?text=${whatsappMessage}`;
+
+        res.json({
+            success: true,
+            message: 'Payment details saved successfully',
+            paymentId,
+            whatsappLink,
+            customer: {
+                name: customerName,
+                email: customerEmail,
+                phone: customerPhone
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Error saving payment details:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// ============================================
+// Get Payment Details by Payment ID or Phone
+// ============================================
+app.post('/api/get-payment-details', async (req, res) => {
+    try {
+        const { paymentId, customerPhone } = req.body;
+
+        if (!paymentId && !customerPhone) {
+            return res.status(400).json({
+                success: false,
+                error: 'Either paymentId or customerPhone is required'
+            });
+        }
+
+        const payments = await getPayments(true);
+        let matchingPayments = [];
+
+        if (paymentId) {
+            // Search by payment ID
+            if (payments[paymentId]) {
+                matchingPayments = [{
+                    paymentId,
+                    ...payments[paymentId]
+                }];
+            }
+        } else if (customerPhone) {
+            // Search by phone number
+            matchingPayments = Object.entries(payments)
+                .filter(([_, data]) => data.customerPhone === customerPhone)
+                .map(([id, data]) => ({
+                    paymentId: id,
+                    ...data
+                }))
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        }
+
+        if (matchingPayments.length > 0) {
+            // Generate WhatsApp links for each payment
+            const results = matchingPayments.map(payment => {
+                const message = encodeURIComponent(
+                    `Hello ${payment.customerName || 'there'}! Regarding your payment (ID: ${payment.paymentId}) ` +
+                    `for ${payment.workshopName || 'the workshop'}. Join our WhatsApp group here.`
+                );
+                return {
+                    ...payment,
+                    whatsappLink: `https://wa.me/${payment.customerPhone || customerPhone}?text=${message}`
+                };
+            });
+
+            res.json({
+                success: true,
+                count: results.length,
+                payments: results
+            });
+        } else {
+            res.json({
+                success: false,
+                message: 'No payments found matching your criteria'
+            });
+        }
+
+    } catch (error) {
+        console.error('❌ Error fetching payment details:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// ============================================
+// Generate WhatsApp Link API
+// ============================================
+app.post('/api/generate-whatsapp-link', async (req, res) => {
+    try {
+        const { 
+            paymentId,
+            customerName,
+            customerPhone,
+            customMessage 
+        } = req.body;
+
+        if (!paymentId || !customerPhone) {
+            return res.status(400).json({
+                success: false,
+                error: 'Payment ID and customer phone are required'
+            });
+        }
+
+        // Default message
+        const defaultMessage = customMessage || 
+            `Hello ${customerName || 'there'}! Your payment (ID: ${paymentId}) is confirmed. ` +
+            `Click here to join the WhatsApp group.`;
+
+        const whatsappLink = `https://wa.me/${customerPhone}?text=${encodeURIComponent(defaultMessage)}`;
+
+        res.json({
+            success: true,
+            paymentId,
+            customerName,
+            customerPhone,
+            whatsappLink,
+            message: defaultMessage
+        });
+
+    } catch (error) {
+        console.error('❌ Error generating WhatsApp link:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
 // Verify Razorpay signature
 function verifySignature(body, signature) {
     if (!WEBHOOK_SECRET || !signature) {
@@ -565,6 +766,12 @@ app.post('/api/verify-payment', async (req, res) => {
             razorpay_signature,
             key_secret  // Key secret from frontend for verification
         } = req.body;
+
+        // Add this near the top of your verify endpoint for testing only
+        if (process.env.NODE_ENV !== 'production' && razorpay_signature === 'test_signature') {
+            console.log('⚠️ TEST MODE: Accepting test signature');
+            return res.json({ success: true, message: 'Test verification passed' });
+        }
 
         if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !key_secret) {
             return res.status(400).json({
@@ -1121,6 +1328,126 @@ app.post('/api/find-payment-by-ua', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
+app.get('/verify/:code', async (req, res) => {
+    const { code } = req.params;
+    const dbPath = path.join(__dirname, 'payment.json');
+    
+    try {
+      const content = await fs.readFile(dbPath, 'utf8');
+      const data = JSON.parse(content);
+      
+      // Check if code exists
+      if (data[code] && !data[code].used) {
+        // Mark as used (optional - for one-time use)
+        data[code].used = true;
+        data[code].accessedAt = new Date().toISOString();
+        await fs.writeFile(dbPath, JSON.stringify(data, null, 2));
+        
+        // Return success with WhatsApp link
+        res.json({
+          valid: true,
+          paymentId: data[code].paymentId,
+          whatsappLink: data[code].whatsappLink
+        });
+      } else if (data[code] && data[code].used) {
+        res.json({
+          valid: false,
+          message: 'This link has already been used'
+        });
+      } else {
+        res.json({
+          valid: false,
+          message: 'Invalid access code'
+        });
+      }
+    } catch (err) {
+      res.status(500).json({ valid: false, message: 'Server error' });
+    }
+  });
+// Webhook endpoint - modify your existing payment success handler
+app.post('/webhook/payment-success', async (req, res) => {
+    const { paymentId, email, amount } = req.body;
+    
+    // Your existing payment verification logic
+    const isValid = await verifyPayment(paymentId);
+    
+    if (isValid) {
+      // Generate unique access code
+      const accessCode = generateAccessCode();
+      await storeAccessCode(paymentId, accessCode);
+      
+      // Return the obfuscated link
+      const joinLink = `https://innershiftnirvaana.github.io/innershiftnirvaana-repo/join?code=${accessCode}`;
+      
+      // Send to user (email or direct response)
+      res.json({
+        success: true,
+        joinLink: joinLink,
+        message: 'Use this link to access the group'
+      });
+    }
+  });
+// On payment success page
+app.get('/payment-success-access-code', async (req, res) => {
+    const paymentId = req.query.payment_id;
+    
+    // 1. Generate unique, random code
+    const accessCode = crypto.randomBytes(8).toString('hex'); // 16 chars, hex
+    
+    // 2. Create signed payload
+    const payload = {
+      paymentId: paymentId,
+      whatsappLink: 'https://chat.whatsapp.com/realgroup123',
+      created: Date.now(),
+      maxClicks: 1
+    };
+    
+    // 3. Encrypt it (optional but maximum security)
+    const encrypted = encryptPayload(payload, SECRET_KEY);
+    
+    // 4. Store in database
+    await db.save({
+      code: accessCode,
+      data: encrypted,
+      used: false,
+      expires: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+    
+    // 5. Give user this beautiful, obfuscated link
+    const finalLink = `https://join.yourdomain.com/${accessCode}`;
+    // Looks like: https://join.yourdomain.com/a1b2c3d4e5f67890
+    
+    res.send(`
+      <h2>Payment Successful!</h2>
+      <p>Your private group link:</p>
+      <a href="${finalLink}">${finalLink}</a>
+      <p>This link expires in 7 days or after first use.</p>
+    `);
+  });
+  
+  // Handle the access link
+  app.get('/join/:code', async (req, res) => {
+    const { code } = req.params;
+    
+    // Look up in database
+    const record = await db.findByCode(code);
+    
+    if (!record || record.used || record.expires < Date.now()) {
+      return res.status(404).send('Invalid or expired link');
+    }
+    
+    // Mark as used (for one-time links)
+    await db.markAsUsed(code);
+    
+    // Log the access with payment ID
+    console.log(`Payment ${record.paymentId} accessed link at ${new Date()}`);
+    
+    // Decrypt and redirect
+    const payload = decryptPayload(record.data, SECRET_KEY);
+    res.redirect(payload.whatsappLink);
+  });
+
 app.post('/payment-success', async (req, res) => {
     try {
         const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
