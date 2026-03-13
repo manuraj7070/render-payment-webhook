@@ -254,7 +254,16 @@ const app = express();
 // Get allowed origins from environment variable
 // Get allowed origins - add the specific Google embed domain
 const allowedOrigins = process.env.ALLOWED_ORIGINS 
-    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
+    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => {
+        origin = origin.trim();
+        // Check if it looks like a regex pattern (starts and ends with /)
+        if (origin.startsWith('/') && origin.lastIndexOf('/') > 0) {
+            const pattern = origin.slice(1, origin.lastIndexOf('/'));
+            const flags = origin.slice(origin.lastIndexOf('/') + 1);
+            return new RegExp(pattern, flags);
+        }
+        return origin;
+    })    
     : [
         'https://manuraj7070.github.io',
         'https://sites.google.com',
