@@ -23,6 +23,17 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Reason:', reason);
 });
 
+const razorpay = new Razorpay({
+    key_id: process.env.RAZORPAY_LIVE_KEY_ID,
+    key_secret: process.env.RAZORPAY_LIVE_KEY_SECRET
+});
+
+// Also initialize test instance if needed
+const razorpayTest = process.env.RAZORPAY_TEST_KEY_ID ? new Razorpay({
+    key_id: process.env.RAZORPAY_TEST_KEY_ID,
+    key_secret: process.env.RAZORPAY_TEST_KEY_SECRET
+}) : null;
+
 // Shutdown handlers
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
@@ -690,24 +701,30 @@ function validateWebhookPayload(body) {
 // ============================================
 // NEW ENDPOINT: Create Razorpay Order (with credentials in payload)
 // ============================================
+// Endpoint to get PUBLIC key only
+// ============================================
+// CORRECT IMPLEMENTATION - Keys ONLY from environment
+// ============================================
+
+
+// Endpoint to get PUBLIC key only
+app.get('/api/get-public-key', (req, res) => {
+    // Determine which mode we're in (test/production)
+    const mode = process.env.RAZORPAY_MODE || 'test';
+    const keyId = mode === 'production' 
+        ? process.env.RAZORPAY_LIVE_KEY_ID 
+        : process.env.RAZORPAY_TEST_KEY_ID;
+    
+    res.json({ 
+        key_id: keyId,
+        mode: mode 
+    });
+});
+
+// Create order - NO keys from frontend
 app.post('/api/create-order', async (req, res) => {
     try {
-        const { 
-            amount, 
-            currency = 'INR', 
-            receipt, 
-            notes,
-            key_id,          // Razorpay Key ID from frontend
-            key_secret        // Razorpay Key Secret from frontend
-        } = req.body;
-        
-        // Validate required fields
-        if (!key_id || !key_secret) {
-            return res.status(400).json({
-                success: false,
-                error: 'Razorpay credentials (key_id, key_secret) are required'
-            });
-        }
+        const { amount, currency = 'INR', notes } = req.body;
 
         // Validate amount
         if (!amount || amount <= 0) {
@@ -717,25 +734,26 @@ app.post('/api/create-order', async (req, res) => {
             });
         }
 
-        console.log(`💰 Creating order for amount: ₹${amount} with key: ${key_id.substring(0, 8)}...`);
+        // Determine which instance to use (test/production)
+        const mode = process.env.RAZORPAY_MODE || 'test';
+        const instance = mode === 'production' ? razorpay : (razorpayTest || razorpay);
 
-        // Create Razorpay instance with provided credentials
-        const razorpay = getRazorpayInstance(key_id, key_secret);
+        console.log(`💰 Creating order for amount: ₹${amount} in ${mode} mode`);
 
         // Create order in Razorpay
         const orderOptions = {
-            amount: amount * 100, // Convert to paise
+            amount: amount * 100,
             currency: currency,
-            receipt: receipt || `receipt_${Date.now()}`,
-            payment_capture: 1, // Auto capture payment
+            receipt: `receipt_${Date.now()}`,
+            payment_capture: 1,
             notes: notes || {}
         };
 
-        const order = await razorpay.orders.create(orderOptions);
+        const order = await instance.orders.create(orderOptions);
 
         console.log(`✅ Order created: ${order.id}`);
 
-        // Return order details to frontend
+        // Return ONLY order details, NEVER keys
         res.json({
             success: true,
             order_id: order.id,
@@ -743,7 +761,6 @@ app.post('/api/create-order', async (req, res) => {
             currency: order.currency,
             receipt: order.receipt,
             status: order.status
-            // Don't send key_id back - already have it
         });
 
     } catch (error) {
@@ -755,37 +772,28 @@ app.post('/api/create-order', async (req, res) => {
     }
 });
 
-// ============================================
-// NEW ENDPOINT: Verify Payment Signature (with credentials in payload)
-// ============================================
+// Verify payment - Using environment keys ONLY
 app.post('/api/verify-payment', async (req, res) => {
     try {
-        const { 
-            razorpay_order_id, 
-            razorpay_payment_id, 
-            razorpay_signature,
-            key_secret  // Key secret from frontend for verification
-        } = req.body;
+        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
-        // Add this near the top of your verify endpoint for testing only
-        if (process.env.NODE_ENV !== 'production' && razorpay_signature === 'test_signature') {
-            console.log('⚠️ TEST MODE: Accepting test signature');
-            return res.json({ success: true, message: 'Test verification passed' });
-        }
-
-        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !key_secret) {
+        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
             return res.status(400).json({
                 success: false,
-                error: 'Missing required fields (order_id, payment_id, signature, key_secret)'
+                error: 'Missing required fields'
             });
         }
 
-        // Create signature string
-        const body = razorpay_order_id + '|' + razorpay_payment_id;
+        // Get the correct secret based on mode
+        const mode = process.env.RAZORPAY_MODE || 'test';
+        const keySecret = mode === 'production' 
+            ? process.env.RAZORPAY_LIVE_KEY_SECRET 
+            : process.env.RAZORPAY_TEST_KEY_SECRET;
 
-        // Generate expected signature using provided key_secret
+        // Generate signature using server-side secret
+        const body = razorpay_order_id + '|' + razorpay_payment_id;
         const expectedSignature = crypto
-            .createHmac('sha256', key_secret)
+            .createHmac('sha256', keySecret)
             .update(body.toString())
             .digest('hex');
 
@@ -795,8 +803,8 @@ app.post('/api/verify-payment', async (req, res) => {
         if (isValid) {
             console.log(`✅ Payment verified for order: ${razorpay_order_id}`);
             
-            // Store payment mapping
-            linkToPaymentMap[razorpay_order_id] = razorpay_payment_id;
+            // Store successful payment mapping
+            // (you should use a proper database)
             
             res.json({
                 success: true,
@@ -813,6 +821,88 @@ app.post('/api/verify-payment', async (req, res) => {
 
     } catch (error) {
         console.error('❌ Payment verification error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// ============================================
+// Optional: Endpoints for fetching details (still using server keys)
+// ============================================
+
+app.post('/api/order-details', async (req, res) => {
+    try {
+        const { order_id } = req.body;
+        
+        if (!order_id) {
+            return res.status(400).json({
+                success: false,
+                error: 'order_id is required'
+            });
+        }
+
+        const mode = process.env.RAZORPAY_MODE || 'test';
+        const instance = mode === 'production' ? razorpay : (razorpayTest || razorpay);
+        
+        // Fetch order from Razorpay
+        const order = await instance.orders.fetch(order_id);
+        
+        // Only return safe fields
+        res.json({
+            success: true,
+            order: {
+                id: order.id,
+                amount: order.amount,
+                currency: order.currency,
+                status: order.status,
+                created_at: order.created_at
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Order fetch error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Similar for payment details - use server keys, never accept from client
+app.post('/api/payment-details', async (req, res) => {
+    try {
+        const { payment_id } = req.body;
+        
+        if (!payment_id) {
+            return res.status(400).json({
+                success: false,
+                error: 'payment_id is required'
+            });
+        }
+
+        const mode = process.env.RAZORPAY_MODE || 'test';
+        const instance = mode === 'production' ? razorpay : (razorpayTest || razorpay);
+        
+        const payment = await instance.payments.fetch(payment_id);
+        
+        // Only return safe fields
+        res.json({
+            success: true,
+            payment: {
+                id: payment.id,
+                amount: payment.amount,
+                currency: payment.currency,
+                status: payment.status,
+                method: payment.method,
+                created_at: payment.created_at
+                // DON'T send sensitive data like bank details, card numbers, etc.
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Payment fetch error:', error);
         res.status(500).json({
             success: false,
             error: error.message
