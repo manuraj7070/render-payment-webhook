@@ -247,12 +247,7 @@ const git = simpleGit({
 });
 
 const app = express();
-app.use(express.json({ limit: '1mb' })); // Limit payload size
 
-const cors = require('cors');
-
-// Enable CORS for all routes
-// app.use(cors());
 
 // Or more specifically, allow only your GitHub domain
 // Get allowed origins from environment variable
@@ -263,10 +258,13 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
     : [
         'https://manuraj7070.github.io',
+        'https://sites.google.com',
         'https://innershiftnirvaana.space',
         'https://pay.innershiftnirvaana.space',  // ← ADD THIS LINE
         'https://588380366-atari-embeds.googleusercontent.com',
-        'https://*.googleusercontent.com'
+        'https://*.googleusercontent.com',
+        'http://localhost:8080',  // For local testing
+        'http://localhost:3000'    // For local testing
       ]; 
 
 console.log('🔓 Allowed CORS origins:', allowedOrigins);
@@ -290,9 +288,19 @@ app.use(cors({
         callback(new Error('Not allowed by CORS'));
     },
     methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type'],
-    credentials: true
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true,
+    optionsSuccessStatus: 200
 }));
+
+// Handle preflight requests
+app.options('*', cors());
+app.use(express.json({ limit: '1mb' })); // Limit payload size
+
+const cors = require('cors');
+
+// Enable CORS for all routes
+// app.use(cors());
 
 // Debug all relevant environment variables
 console.log('🔍 ENVIRONMENT VARIABLES DEBUG:');
@@ -469,14 +477,26 @@ async function savePaymentX(paymentId, paymentData) {
     }
 }
 
-// Add this BEFORE any other routes
+// ============================================
+// FIXED: Test endpoint with better error handling
+// ============================================
 app.get('/api/test', (req, res) => {
-    console.log('✅ Test endpoint hit at:', new Date().toISOString());
-    res.json({ 
-        success: true, 
-        message: 'Server is running!',
-        time: new Date().toISOString()
-    });
+    try {
+        console.log('✅ Test endpoint hit from origin:', req.headers.origin);
+        res.json({ 
+            success: true, 
+            message: 'Server is running!',
+            timestamp: new Date().toISOString(),
+            mode: process.env.RAZORPAY_MODE || 'test',
+            origin: req.headers.origin
+        });
+    } catch (error) {
+        console.error('❌ Test endpoint error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
 });
 
 // ============================================
@@ -731,127 +751,152 @@ function validateWebhookPayload(body) {
 // ============================================
 
 
-// Endpoint to get PUBLIC key only
+// ============================================
+// FIXED: Get public key endpoint
+// ============================================
 app.get('/api/get-public-key', (req, res) => {
-    // Determine which mode we're in (test/production)
-    const mode = process.env.RAZORPAY_MODE || 'test';
-    const keyId = mode === 'production' 
-        ? process.env.RAZORPAY_LIVE_KEY_ID 
-        : process.env.RAZORPAY_TEST_KEY_ID;
-    
-    res.json({ 
-        key_id: keyId,
-        mode: mode 
-    });
+    try {
+        console.log('🔑 Public key requested from:', req.headers.origin);
+        
+        const keyId = process.env.RAZORPAY_MODE === 'production' 
+            ? process.env.RAZORPAY_LIVE_KEY_ID 
+            : process.env.RAZORPAY_TEST_KEY_ID;
+        
+        if (!keyId) {
+            throw new Error('Key ID not configured in environment variables');
+        }
+        
+        // Set CORS headers explicitly for this endpoint
+        res.header('Access-Control-Allow-Origin', req.headers.origin);
+        res.header('Access-Control-Allow-Credentials', 'true');
+        
+        res.json({ 
+            success: true, 
+            key_id: keyId,
+            mode: process.env.RAZORPAY_MODE || 'test'
+        });
+    } catch (error) {
+        console.error('❌ Public key error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
+    }
 });
 
-// Create order - NO keys from frontend
+// ============================================
+// FIXED: Create order endpoint
+// ============================================
 app.post('/api/create-order', async (req, res) => {
     try {
-        const { amount, currency = 'INR', notes } = req.body;
-
-        // Validate amount
+        console.log('💰 Create order request from:', req.headers.origin);
+        console.log('📦 Request body:', req.body);
+        
+        const { amount, fullname, email, phone } = req.body;
+        
+        // Validate inputs
         if (!amount || amount <= 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Invalid amount. Must be greater than 0'
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Invalid amount' 
             });
         }
+        
+        // Initialize Razorpay
+        const keyId = process.env.RAZORPAY_MODE === 'production' 
+            ? process.env.RAZORPAY_LIVE_KEY_ID 
+            : process.env.RAZORPAY_TEST_KEY_ID;
+            
+        const keySecret = process.env.RAZORPAY_MODE === 'production' 
+            ? process.env.RAZORPAY_LIVE_KEY_SECRET 
+            : process.env.RAZORPAY_TEST_KEY_SECRET;
+        
+        if (!keyId || !keySecret) {
+            throw new Error('Razorpay credentials not configured');
+        }
+        
+        const razorpay = new Razorpay({
+            key_id: keyId,
+            key_secret: keySecret
+        });
 
-        // Determine which instance to use (test/production)
-        const mode = process.env.RAZORPAY_MODE || 'test';
-        const instance = mode === 'production' ? razorpay : (razorpayTest || razorpay);
-
-        console.log(`💰 Creating order for amount: ₹${amount} in ${mode} mode`);
-
-        // Create order in Razorpay
-        const orderOptions = {
+        // Create order
+        const order = await razorpay.orders.create({
             amount: amount * 100,
-            currency: currency,
+            currency: 'INR',
             receipt: `receipt_${Date.now()}`,
-            payment_capture: 1,
-            notes: notes || {}
-        };
+            notes: { fullname, email, phone }
+        });
 
-        const order = await instance.orders.create(orderOptions);
-
-        console.log(`✅ Order created: ${order.id}`);
-
-        // Return ONLY order details, NEVER keys
+        console.log('✅ Order created:', order.id);
+        
+        // Set CORS headers
+        res.header('Access-Control-Allow-Origin', req.headers.origin);
+        res.header('Access-Control-Allow-Credentials', 'true');
+        
         res.json({
             success: true,
             order_id: order.id,
             amount: order.amount,
             currency: order.currency,
-            receipt: order.receipt,
-            status: order.status
+            key_id: keyId  // Send key_id for frontend
         });
-
+        
     } catch (error) {
         console.error('❌ Order creation error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message || 'Failed to create order'
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
         });
     }
 });
 
-// Verify payment - Using environment keys ONLY
-app.post('/api/verify-payment', async (req, res) => {
+// ============================================
+// Verify payment endpoint
+// ============================================
+app.post('/api/verify-payment', (req, res) => {
     try {
+        console.log('🔍 Verify payment from:', req.headers.origin);
+        
         const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-
-        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-            return res.status(400).json({
-                success: false,
-                error: 'Missing required fields'
-            });
-        }
-
-        // Get the correct secret based on mode
-        const mode = process.env.RAZORPAY_MODE || 'test';
-        const keySecret = mode === 'production' 
+        
+        const keySecret = process.env.RAZORPAY_MODE === 'production' 
             ? process.env.RAZORPAY_LIVE_KEY_SECRET 
             : process.env.RAZORPAY_TEST_KEY_SECRET;
 
-        // Generate signature using server-side secret
         const body = razorpay_order_id + '|' + razorpay_payment_id;
         const expectedSignature = crypto
             .createHmac('sha256', keySecret)
-            .update(body.toString())
+            .update(body)
             .digest('hex');
 
-        // Compare signatures
         const isValid = expectedSignature === razorpay_signature;
-
+        
+        // Set CORS headers
+        res.header('Access-Control-Allow-Origin', req.headers.origin);
+        res.header('Access-Control-Allow-Credentials', 'true');
+        
         if (isValid) {
-            console.log(`✅ Payment verified for order: ${razorpay_order_id}`);
-            
-            // Store successful payment mapping
-            // (you should use a proper database)
-            
-            res.json({
-                success: true,
-                message: 'Payment verified successfully',
-                payment_id: razorpay_payment_id
+            console.log('✅ Payment verified:', razorpay_payment_id);
+            res.json({ 
+                success: true, 
+                payment_id: razorpay_payment_id 
             });
         } else {
-            console.log('❌ Invalid payment signature');
-            res.status(400).json({
-                success: false,
-                error: 'Invalid signature'
+            console.log('❌ Invalid signature');
+            res.status(400).json({ 
+                success: false, 
+                error: 'Invalid signature' 
             });
         }
-
     } catch (error) {
-        console.error('❌ Payment verification error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
+        console.error('❌ Verification error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
         });
     }
 });
-
 // ============================================
 // Optional: Endpoints for fetching details (still using server keys)
 // ============================================
