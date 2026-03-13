@@ -13,6 +13,11 @@ const path = require('path');
 // Initialize on startup
 let GITHUB_READY = false;
 
+console.log('🚀 Server starting...');
+console.log('Node version:', process.version);
+console.log('Environment:', process.env.NODE_ENV);
+console.log('GITHUB_TOKEN exists:', !!process.env.GITHUB_TOKEN);
+
 const GITHUB_TOKEN=process.env.GITHUB_TOKEN
 const GITHUB_REPO=manuraj7070/render-payment-webhook
 const GITHUB_BRANCH=main
@@ -103,7 +108,7 @@ async function initGitStorageX() {
     }
 }
 // Initialize git repository for storage
-async function initGitStorage() {
+async function initGitStorageXX() {
     if (!GITHUB_TOKEN) {
         console.log('⚠️ GITHUB_TOKEN not set - GitHub sync disabled');
         return false;
@@ -143,6 +148,43 @@ async function initGitStorage() {
         
     } catch (error) {
         console.error('❌ Failed to initialize GitHub storage:', error.message);
+        return false;
+    }
+}
+
+//initGitStorage with more debugß
+async function initGitStorage() {
+    console.log('🔧 Initializing GitHub storage...');
+    
+    if (!process.env.GITHUB_TOKEN) {
+        console.log('❌ GITHUB_TOKEN missing');
+        return false;
+    }
+    
+    console.log('✅ GITHUB_TOKEN found, length:', process.env.GITHUB_TOKEN.length);
+    
+    try {
+        console.log('📁 Creating directory:', LOCAL_REPO_PATH);
+        await fs.mkdir(LOCAL_REPO_PATH, { recursive: true });
+        
+        // Check if already cloned
+        const gitDir = path.join(LOCAL_REPO_PATH, '.git');
+        const gitExists = await fs.access(gitDir).then(() => true).catch(() => false);
+        
+        if (gitExists) {
+            console.log('📁 Git repo exists, pulling...');
+            execSync(`cd ${LOCAL_REPO_PATH} && git pull`, { stdio: 'inherit' });
+        } else {
+            console.log('📦 Cloning repository...');
+            const repoUrl = `https://manuraj7070:${process.env.GITHUB_TOKEN}@github.com/manuraj7070/render-payment-webhook.git`;
+            execSync(`git clone ${repoUrl} ${LOCAL_REPO_PATH}`, { stdio: 'inherit' });
+        }
+        
+        console.log('✅ GitHub storage ready');
+        return true;
+        
+    } catch (error) {
+        console.error('❌ GitHub init failed:', error.message);
         return false;
     }
 }
@@ -1251,7 +1293,7 @@ app.get('/payment-success', async (req, res) => {
 
 // Add this endpoint to get recent payments
 // Replace your recent-payments endpoint with:
-app.get('/recent-payments', async (req, res) => {
+app.get('/recent-paymentsX', async (req, res) => {
     try {
         console.log('📊 Recent payments requested');
         console.log('Origin:', req.headers.origin);
@@ -1299,7 +1341,32 @@ app.get('/recent-payments', async (req, res) => {
         });
     }
 });
-
+app.get('/recent-payments', async (req, res) => {
+    try {
+        console.log('📊 Recent payments requested');
+        
+        const payments = await getPayments(true);
+        
+        if (!payments) {
+            return res.json({ count: 0, payments: [] });
+        }
+        
+        const paymentsArray = Object.entries(payments);
+        const recent = paymentsArray
+            .map(([id, data]) => ({
+                paymentId: id,
+                timestamp: data?.timestamp || new Date().toISOString(),
+                amount: data?.amount || 0
+            }))
+            .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+            .slice(0, 5);
+        
+        res.json({ count: recent.length, payments: recent });
+    } catch (error) {
+        console.error('❌ Recent payments error:', error.message);
+        res.status(500).json({ count: 0, payments: [] });
+    }
+});
 // Verify payment endpoint
 app.get('/verify/:paymentId', async (req, res) => {
     try {
@@ -1378,7 +1445,7 @@ app.get('/admin/payments', async (req, res) => {
 });
 
 // Health check with system info
-app.get('/health', async (req, res) => {
+app.get('/healthX', async (req, res) => {
     try {
         // Health check - use cache
         const payments = await getPayments();
@@ -1414,6 +1481,21 @@ app.get('/health', async (req, res) => {
         });
     }
 });
+app.get('/health', async (req, res) => {
+    try {
+        const payments = await getPayments();
+        res.json({
+            status: 'ok',
+            time: new Date().toISOString(),
+            uptime: Math.floor(process.uptime()),
+            payments: Object.keys(payments).length,
+            node: process.version
+        });
+    } catch (error) {
+        res.status(500).json({ status: 'error', error: error.message });
+    }
+});
+
 // Add this to check webhook status
 app.get('/diagnostic', async (req, res) => {
     try {
