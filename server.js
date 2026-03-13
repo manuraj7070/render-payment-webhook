@@ -1895,6 +1895,215 @@ app.get('/debug/check-file', async (req, res) => {
         res.json({ error: error.message });
     }
 });
+
+// ============================================
+// server-side-options.js - Complete Options Package Handler
+// ============================================
+app.post('/api/get-checkout-options', async (req, res) => {
+    try {
+        const { 
+            amount, 
+            fullname, 
+            email, 
+            phone,
+            currency = 'INR',
+            description = 'Addiction Healing Workshop',
+            themeColor = '#667eea'
+        } = req.body;
+
+        // Validate required fields
+        if (!amount || amount <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid amount'
+            });
+        }
+
+        if (!fullname || !email || !phone) {
+            return res.status(400).json({
+                success: false,
+                error: 'Customer details (name, email, phone) are required'
+            });
+        }
+
+        console.log('📦 Generating checkout options for:', { fullname, email, amount });
+
+        // 1. Get Razorpay instance with proper keys from environment
+        const razorpay = new Razorpay({
+            key_id: process.env.RAZORPAY_MODE === 'production' 
+                ? process.env.RAZORPAY_LIVE_KEY_ID 
+                : process.env.RAZORPAY_TEST_KEY_ID,
+            key_secret: process.env.RAZORPAY_MODE === 'production' 
+                ? process.env.RAZORPAY_LIVE_KEY_SECRET 
+                : process.env.RAZORPAY_TEST_KEY_SECRET
+        });
+
+        // 2. Create order first (order_id is required for checkout)
+        const orderOptions = {
+            amount: amount * 100, // Convert to paise
+            currency: currency,
+            receipt: `receipt_${Date.now()}`,
+            payment_capture: 1,
+            notes: {
+                purpose: description,
+                fullname: fullname,
+                email: email,
+                phone: phone,
+                created_at: new Date().toISOString()
+            }
+        };
+
+        console.log('🔄 Creating Razorpay order...');
+        const order = await razorpay.orders.create(orderOptions);
+        console.log('✅ Order created:', order.id);
+
+        // 3. Get the appropriate key ID based on mode
+        const keyId = process.env.RAZORPAY_MODE === 'production' 
+            ? process.env.RAZORPAY_LIVE_KEY_ID 
+            : process.env.RAZORPAY_TEST_KEY_ID;
+
+        // 4. Build the complete options package
+        const checkoutOptions = {
+            key: keyId,
+            amount: order.amount,
+            currency: order.currency,
+            name: 'Inner Shift Nirvaana',
+            description: description,
+            order_id: order.id,
+            prefill: {
+                name: fullname,
+                email: email,
+                contact: phone
+            },
+            notes: {
+                purpose: description,
+                fullname: fullname,
+                email: email,
+                phone: phone,
+                order_id: order.id
+            },
+            theme: {
+                color: themeColor
+            },
+            // Add any additional Razorpay options here
+            modal: {
+                confirm_close: true, // Ask before closing
+                ondismiss: {
+                    // This will be handled on frontend
+                }
+            },
+            retry: {
+                enabled: true,
+                max_count: 3
+            },
+            remember_customer: true,
+            send_sms_hash: true,
+            callback_url: `${req.protocol}://${req.get('host')}/api/payment-callback`,
+            redirect: false
+        };
+
+        // 5. Also create a frontend handler function as string
+        // (This is optional - you can let frontend define its own handler)
+        const handlerFunction = `
+            function(response) {
+                fetch('/api/payment-success', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        razorpay_payment_id: response.razorpay_payment_id,
+                        razorpay_order_id: response.razorpay_order_id,
+                        razorpay_signature: response.razorpay_signature,
+                        customer: ${JSON.stringify({ fullname, email, phone })}
+                    })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.href = '/success.html?payment_id=' + response.razorpay_payment_id;
+                    } else {
+                        alert('Payment verification failed');
+                    }
+                });
+            }
+        `;
+
+        // 6. Return the complete package
+        res.json({
+            success: true,
+            checkout_options: checkoutOptions,
+            // Also return individual values if needed
+            key_id: keyId,
+            order_id: order.id,
+            amount: order.amount,
+            currency: order.currency,
+            // For backward compatibility
+            legacy: {
+                key: keyId,
+                order_id: order.id
+            }
+        });
+
+    } catch (error) {
+        console.error('❌ Failed to generate checkout options:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to initialize payment'
+        });
+    }
+});
+
+// ============================================
+// Payment Success Handler (called by frontend)
+// ============================================
+app.post('/api/payment-success', async (req, res) => {
+    try {
+        const { 
+            razorpay_payment_id, 
+            razorpay_order_id, 
+            razorpay_signature,
+            customer 
+        } = req.body;
+
+        // Verify payment signature
+        const crypto = require('crypto');
+        const secret = process.env.RAZORPAY_MODE === 'production' 
+            ? process.env.RAZORPAY_LIVE_KEY_SECRET 
+            : process.env.RAZORPAY_TEST_KEY_SECRET;
+
+        const body = razorpay_order_id + '|' + razorpay_payment_id;
+        const expectedSignature = crypto
+            .createHmac('sha256', secret)
+            .update(body.toString())
+            .digest('hex');
+
+        if (expectedSignature !== razorpay_signature) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid signature'
+            });
+        }
+
+        // Payment is verified - save to database
+        console.log('✅ Payment verified:', razorpay_payment_id);
+        
+        // Store payment in your database
+        // await savePayment({ razorpay_payment_id, razorpay_order_id, customer });
+
+        res.json({
+            success: true,
+            payment_id: razorpay_payment_id,
+            message: 'Payment verified successfully'
+        });
+
+    } catch (error) {
+        console.error('❌ Payment success handler error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Add a simple keep-alive endpoint
 app.get('/ping', (req, res) => {
     res.json({ status: 'alive', time: new Date().toISOString() });
