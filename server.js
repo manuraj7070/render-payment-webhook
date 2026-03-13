@@ -264,7 +264,12 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
         'https://588380366-atari-embeds.googleusercontent.com',
         'https://*.googleusercontent.com',
         'http://localhost:8080',  // For local testing
-        'http://localhost:3000'    // For local testing
+        'http://localhost:3000',
+        // Add ALL possible Google embed domains
+        /\.googleusercontent\.com$/,  // This matches ANY subdomain of googleusercontent.com
+        /\.google\.com$/,              // This matches ANY subdomain of google.com
+        'https://1971649687-atari-embeds.googleusercontent.com',  // Your specific one
+        'https://*.googleusercontent.com'  // Wildcard pattern
       ]; 
 
 console.log('🔓 Allowed CORS origins:', allowedOrigins);
@@ -274,21 +279,34 @@ app.use(cors({
         // Allow requests with no origin (like mobile apps, curl)
         if (!origin) return callback(null, true);
         
-        // Check exact match first
-        if (allowedOrigins.includes(origin)) {
-            return callback(null, true);
-        }
-        
+        // Check if origin matches any allowed pattern
+        const isAllowed = allowedOrigins.some(allowed => {
+            if (allowed instanceof RegExp) {
+                return allowed.test(origin);
+            }
+            // Convert wildcard to regex
+            if (typeof allowed === 'string' && allowed.includes('*')) {
+                const pattern = allowed.replace(/\*/g, '.*');
+                return new RegExp(pattern).test(origin);
+            }
+            return allowed === origin;
+        });
+
+
         // Check wildcard for googleusercontent.com
         if (origin.includes('googleusercontent.com')) {
             return callback(null, true);
         }
         
-        console.log('❌ Blocked CORS from:', origin);
-        callback(new Error('Not allowed by CORS'));
+        if (isAllowed) {
+            callback(null, true);
+        } else {
+            console.log('❌ Blocked origin:', origin);
+            callback(new Error(`Origin ${origin} not allowed by CORS`));
+        }
     },
-    methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    methods: ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
     credentials: true,
     optionsSuccessStatus: 200
 }));
