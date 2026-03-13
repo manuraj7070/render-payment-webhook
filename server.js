@@ -139,6 +139,10 @@ async function savePayment(paymentId, paymentData) {
         } catch {
             await fs.writeFile(path.join(LOCAL_REPO_PATH, 'payments.json'), '{}');
         }       
+
+        console.log('💾 Saving payment to:', PAYMENTS_FILE);
+        console.log('📁 Payment data:', paymentId);
+
         // Save to file in repo
         await fs.writeFile(PAYMENTS_FILE, JSON.stringify(payments, null, 2));
         console.log(`✅ Payment ${paymentId} saved locally`);
@@ -1282,6 +1286,36 @@ app.get('/debug-payments', async (req, res) => {
             success: false, 
             error: error.message 
         });
+    }
+});
+app.get('/debug-webhook-status', async (req, res) => {
+    try {
+        // Check if payments file exists and has content
+        const fileExists = await fs.access(PAYMENTS_FILE).then(() => true).catch(() => false);
+        let fileContent = {};
+        let paymentCount = 0;
+        
+        if (fileExists) {
+            try {
+                const data = await fs.readFile(PAYMENTS_FILE, 'utf8');
+                fileContent = JSON.parse(data);
+                paymentCount = Object.keys(fileContent).length;
+            } catch (e) {
+                console.error('Error reading file:', e);
+            }
+        }
+        
+        // Also check your in-memory cache
+        res.json({
+            paymentsFile: PAYMENTS_FILE,
+            fileExists,
+            paymentCount,
+            fileContent,
+            cacheSize: paymentsCache ? Object.keys(paymentsCache).length : 0,
+            cacheContent: paymentsCache
+        });
+    } catch (error) {
+        res.json({ error: error.message });
     }
 });
 // Verify payment endpoint
