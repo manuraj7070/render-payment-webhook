@@ -130,7 +130,7 @@ async function savePayment(paymentId, paymentData) {
             timestamp: paymentData.timestamp || new Date().toISOString(),
             receivedAt: new Date().toISOString()
         };
-        
+
         // Before git add, ensure file exists
         try {
             await fs.access(path.join(LOCAL_REPO_PATH, 'payments.json'));
@@ -1240,7 +1240,19 @@ app.get('/recent-payments', async (req, res) => {
 app.get('/api/recent-payments', (req, res) => {
     res.redirect('/recent-payments');
 });
-
+app.get('/debug-payments', async (req, res) => {
+    try {
+        const payments = await getPayments(true);
+        res.json({
+            paymentsFile: PAYMENTS_FILE,
+            fileExists: await fs.access(PAYMENTS_FILE).then(() => true).catch(() => false),
+            paymentCount: Object.keys(payments).length,
+            payments: payments
+        });
+    } catch (error) {
+        res.json({ error: error.message });
+    }
+});
 // Verify payment endpoint
 app.get('/verify/:paymentId', async (req, res) => {
     try {
