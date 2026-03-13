@@ -23,6 +23,15 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('Reason:', reason);
 });
 
+// Add at the VERY TOP of server.js
+console.log('🔍 DEBUG: Starting server with environment check:');
+console.log('RAZORPAY_MODE:', process.env.RAZORPAY_MODE || 'not set');
+console.log('RAZORPAY_TEST_KEY_ID present:', !!process.env.RAZORPAY_TEST_KEY_ID);
+console.log('RAZORPAY_TEST_KEY_SECRET present:', !!process.env.RAZORPAY_TEST_KEY_SECRET);
+console.log('RAZORPAY_LIVE_KEY_ID present:', !!process.env.RAZORPAY_LIVE_KEY_ID);
+console.log('RAZORPAY_LIVE_KEY_SECRET present:', !!process.env.RAZORPAY_LIVE_KEY_SECRET);
+console.log('ALL env vars:', Object.keys(process.env).filter(key => key.includes('RAZORPAY')).join(', '));
+
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_LIVE_KEY_ID,
     key_secret: process.env.RAZORPAY_LIVE_KEY_SECRET
@@ -311,7 +320,7 @@ const MAX_PAYMENTS = 10000; // Prevent unlimited file growth
 // ============================================
 // Helper function to create Razorpay instance from request
 // ============================================
-function getRazorpayInstance(keyId, keySecret) {
+/* function getRazorpayInstance(keyId, keySecret) {
     if (!keyId || !keySecret) {
         throw new Error('Razorpay key_id and key_secret are required');
     }
@@ -319,7 +328,7 @@ function getRazorpayInstance(keyId, keySecret) {
         key_id: keyId,
         key_secret: keySecret
     });
-}
+} */
 // Ensure directories exist
 async function ensureDirectories() {
     try {
@@ -910,7 +919,7 @@ app.post('/api/payment-details', async (req, res) => {
     }
 });
 
-// ============================================
+/* // ============================================
 // NEW ENDPOINT: Fetch Order Details (with credentials in payload)
 // ============================================
 app.post('/api/order', async (req, res) => {
@@ -984,7 +993,7 @@ app.post('/api/payment', async (req, res) => {
             error: error.message
         });
     }
-});
+}); */
 
 // ============================================
 // Webhook Endpoint (with credentials in payload)
