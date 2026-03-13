@@ -9,7 +9,7 @@ const simpleGit = require('simple-git');
 const linkToPaymentMap = {};
 const { execSync } = require('child_process');
 //const fs = require('fs');
-const path = require('path');
+//const path = require('path');
 // Initialize on startup
 let GITHUB_READY = false;
 
