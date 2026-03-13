@@ -1217,6 +1217,10 @@ app.get('/recent-payments', async (req, res) => {
     }
 });
 
+app.get('/api/recent-payments', (req, res) => {
+    res.redirect('/recent-payments');
+});
+
 // Verify payment endpoint
 app.get('/verify/:paymentId', async (req, res) => {
     try {
