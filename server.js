@@ -58,7 +58,7 @@ const GIT_AVAILABLE = initGitRepo();
 
 // Initialize git repository for storage
 // Initialize git repository for storage
-async function initGitStorage() {
+async function initGitStorageX() {
     if (!GITHUB_TOKEN) {
         console.log('⚠️ GITHUB_TOKEN not set - GitHub sync disabled');
         return false;
@@ -102,10 +102,53 @@ async function initGitStorage() {
         return false;
     }
 }
+// Initialize git repository for storage
+async function initGitStorage() {
+    if (!GITHUB_TOKEN) {
+        console.log('⚠️ GITHUB_TOKEN not set - GitHub sync disabled');
+        return false;
+    }
 
+    try {
+        // Create repo-cache directory
+        await fs.mkdir(LOCAL_REPO_PATH, { recursive: true });
+        
+        // Check if already cloned
+        try {
+            await fs.access(path.join(LOCAL_REPO_PATH, '.git'));
+            console.log('📁 Git repository exists, pulling latest...');
+            
+            // Pull latest changes
+            execSync(`cd ${LOCAL_REPO_PATH} && git pull`, { 
+                encoding: 'utf8',
+                stdio: 'inherit' 
+            });
+            
+        } catch (err) {
+            // Clone the repository
+            console.log('📦 Cloning repository...');
+            execSync(`git clone ${REPO_URL} ${LOCAL_REPO_PATH}`, { 
+                encoding: 'utf8',
+                stdio: 'inherit' 
+            });
+            console.log('✅ Clone successful');
+        }
+        
+        // Configure git user
+        execSync(`cd ${LOCAL_REPO_PATH} && git config user.email "manuraj7070@users.noreply.github.com"`, { stdio: 'inherit' });
+        execSync(`cd ${LOCAL_REPO_PATH} && git config user.name "manuraj7070"`, { stdio: 'inherit' });
+        
+        console.log('✅ GitHub storage initialized');
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Failed to initialize GitHub storage:', error.message);
+        return false;
+    }
+}
 // Enhanced savePayment with GitHub sync
 // Save payment with GitHub sync
-async function savePayment(paymentId, paymentData) {
+async function savePaymentXX(paymentId, paymentData) {
     try {
         // Load current payments
         const payments = await getPayments(true);
@@ -146,7 +189,47 @@ async function savePayment(paymentId, paymentData) {
         return false;
     }
 }
-
+// Save payment with GitHub sync
+async function savePayment(paymentId, paymentData) {
+    try {
+        // Load current payments
+        const payments = await getPayments(true);
+        
+        // Add new payment
+        payments[paymentId] = {
+            ...paymentData,
+            timestamp: paymentData.timestamp || new Date().toISOString(),
+            receivedAt: new Date().toISOString()
+        };
+        
+        // Save to file in repo
+        await fs.writeFile(PAYMENTS_FILE, JSON.stringify(payments, null, 2));
+        console.log(`✅ Payment ${paymentId} saved locally`);
+        
+        // Commit and push to GitHub
+        if (GITHUB_TOKEN) {
+            try {
+                execSync(`
+                    cd ${LOCAL_REPO_PATH} &&
+                    git add payments.json &&
+                    git commit -m "💾 Add payment ${paymentId}" --allow-empty &&
+                    git push
+                `, { stdio: 'inherit' });
+                
+                console.log(`✅ Payment ${paymentId} synced to GitHub`);
+            } catch (gitError) {
+                console.error('⚠️ GitHub sync failed:', gitError.message);
+                // Don't fail - payment is still saved locally
+            }
+        }
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Failed to save payment:', error.message);
+        return false;
+    }
+}
 // Load payments with GitHub backup
 // Load payments with GitHub backup
 async function loadPayments() {
@@ -1474,7 +1557,6 @@ async function startServer() {
         
         console.log(`✅ Loaded ${Object.keys(payments).length} existing payments`);
          */
-        
         // Start server
         const server = app.listen(PORT, () => {
             console.log(`🚀 Webhook server running on port ${PORT}`);
