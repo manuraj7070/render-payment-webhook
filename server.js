@@ -131,6 +131,12 @@ async function savePayment(paymentId, paymentData) {
             receivedAt: new Date().toISOString()
         };
         
+        // Before git add, ensure file exists
+        try {
+            await fs.access(path.join(LOCAL_REPO_PATH, 'payments.json'));
+        } catch {
+            await fs.writeFile(path.join(LOCAL_REPO_PATH, 'payments.json'), '{}');
+        }       
         // Save to file in repo
         await fs.writeFile(PAYMENTS_FILE, JSON.stringify(payments, null, 2));
         console.log(`✅ Payment ${paymentId} saved locally`);
@@ -1511,7 +1517,7 @@ async function startServer() {
             });
         });
         // ===== END KEEP-ALIVE CODE =====
-        
+
         // Export server for graceful shutdown
         global.server = server;
         
