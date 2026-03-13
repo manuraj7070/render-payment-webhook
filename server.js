@@ -130,7 +130,7 @@ async function savePayment(paymentId, paymentData) {
             timestamp: paymentData.timestamp || new Date().toISOString(),
             receivedAt: new Date().toISOString()
         };
-
+        
         // Before git add, ensure file exists
         try {
             await fs.access(path.join(LOCAL_REPO_PATH, 'payments.json'));
@@ -1240,17 +1240,46 @@ app.get('/recent-payments', async (req, res) => {
 app.get('/api/recent-payments', (req, res) => {
     res.redirect('/recent-payments');
 });
+// Add this temporary debug endpoint
 app.get('/debug-payments', async (req, res) => {
     try {
-        const payments = await getPayments(true);
+        console.log('🔍 Debug payments endpoint called');
+        
+        // Check if payments file exists
+        const fileExists = await fs.access(PAYMENTS_FILE).then(() => true).catch(() => false);
+        
+        let fileContent = null;
+        let paymentCount = 0;
+        let payments = {};
+        
+        if (fileExists) {
+            try {
+                const data = await fs.readFile(PAYMENTS_FILE, 'utf8');
+                payments = JSON.parse(data);
+                paymentCount = Object.keys(payments).length;
+                fileContent = payments;
+            } catch (readError) {
+                console.error('❌ Error reading payments file:', readError.message);
+            }
+        }
+        
         res.json({
+            success: true,
             paymentsFile: PAYMENTS_FILE,
-            fileExists: await fs.access(PAYMENTS_FILE).then(() => true).catch(() => false),
-            paymentCount: Object.keys(payments).length,
-            payments: payments
+            fileExists,
+            paymentCount,
+            payments: fileContent,
+            localStorage: {
+                repoCacheExists: await fs.access(LOCAL_REPO_PATH).then(() => true).catch(() => false),
+                repoCachePath: LOCAL_REPO_PATH
+            }
         });
     } catch (error) {
-        res.json({ error: error.message });
+        console.error('❌ Debug endpoint error:', error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message 
+        });
     }
 });
 // Verify payment endpoint
