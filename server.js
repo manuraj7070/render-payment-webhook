@@ -267,6 +267,7 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
     : [
         'https://manuraj7070.github.io',
         'https://sites.google.com',
+        'https://rawcdn.githack.com',
         'https://innershiftnirvaana.space',
         'https://pay.innershiftnirvaana.space',  // ← ADD THIS LINE
         'https://588380366-atari-embeds.googleusercontent.com',
