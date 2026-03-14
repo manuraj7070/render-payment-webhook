@@ -901,7 +901,71 @@ app.post('/api/create-order', async (req, res) => {
         });
     }
 });
+// ============================================
+// Verify Payment with Razorpay API
+// ============================================
+app.post('/api/razorpay-verify-payment', async (req, res) => {
+    try {
+        const { paymentId } = req.body;
+        
+        if (!paymentId) {
+            return res.status(400).json({ 
+                success: false, 
+                error: 'Payment ID is required' 
+            });
+        }
 
+        // Initialize Razorpay with your live keys
+        const razorpay = new Razorpay({
+            key_id: process.env.RAZORPAY_LIVE_KEY_ID,
+            key_secret: process.env.RAZORPAY_LIVE_KEY_SECRET
+        });
+
+        // Fetch payment details directly from Razorpay API [citation:8]
+        const payment = await razorpay.payments.fetch(paymentId);
+        
+        // Check if payment exists and is successful [citation:3][citation:6]
+        if (payment && (payment.status === 'captured' || payment.status === 'authorized')) {
+            
+            // You can also fetch additional details like customer info [citation:4]
+            // But payment.fetch already includes most details
+            
+            res.json({
+                success: true,
+                payment: {
+                    id: payment.id,
+                    amount: payment.amount,
+                    currency: payment.currency,
+                    status: payment.status,
+                    method: payment.method,
+                    email: payment.email,
+                    contact: payment.contact,
+                    created_at: payment.created_at
+                }
+            });
+        } else {
+            res.status(404).json({ 
+                success: false, 
+                error: 'Payment not found or not successful' 
+            });
+        }
+    } catch (error) {
+        console.error('❌ Razorpay verification error:', error);
+        
+        // Handle specific Razorpay errors [citation:8]
+        if (error.statusCode === 400) {
+            res.status(400).json({ 
+                success: false, 
+                error: 'Invalid payment ID' 
+            });
+        } else {
+            res.status(500).json({ 
+                success: false, 
+                error: error.message || 'Failed to verify payment' 
+            });
+        }
+    }
+});
 // ============================================
 // Verify payment endpoint
 // ============================================
