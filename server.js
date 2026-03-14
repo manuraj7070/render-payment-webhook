@@ -2012,6 +2012,10 @@ app.get('/debug/check-file', async (req, res) => {
 // ============================================
 app.post('/api/get-checkout-options', async (req, res) => {
     try {
+    // Prevent caching
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
         const { 
             amount, 
             fullname, 
