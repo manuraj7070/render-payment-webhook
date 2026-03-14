@@ -318,7 +318,7 @@ app.use(cors({
 }));
 
 // Explicitly handle OPTIONS preflight requests
-app.options('/*', cors());
+//app.options('/*', cors());
 // Handle preflight requests
 
 app.use(express.json({ limit: '1mb' })); // Limit payload size
