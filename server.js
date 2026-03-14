@@ -901,6 +901,90 @@ app.post('/api/create-order', async (req, res) => {
         });
     }
 });
+// In your server.js - Complete payment link solution
+app.post('/api/create-workshop-payment', async (req, res) => {
+    try {
+      const { fullname, email, phone } = req.body;
+      
+      // Create payment link with all bells and whistles
+      const options = {
+        amount: 5100,
+        currency: 'INR',
+        accept_partial: false,
+        description: `Addiction Healing Workshop - ₹51`,
+        customer: {
+          name: fullname,
+          email: email,
+          contact: phone
+        },
+        notify: {
+          sms: true,
+          email: true
+        },
+        reminder_enable: true,
+        notes: {
+          fullname: fullname,
+          email: email,
+          phone: phone,
+          whatsapp_group: REAL_WHATSAPP_LINK
+        },
+        // After payment, send them to a page with WhatsApp link
+        callback_url: 'https://your-site.com/payment-success',
+        callback_method: 'get'
+      };
+  
+      const paymentLink = await razorpay.paymentLink.create(options);
+      
+      // Store payment link in database with user data
+      await db.save({
+        paymentLinkId: paymentLink.id,
+        shortUrl: paymentLink.short_url,
+        customer: { fullname, email, phone },
+        createdAt: new Date()
+      });
+      
+      // Return both payment link AND WhatsApp link
+      res.json({
+        success: true,
+        payment_link: paymentLink.short_url,
+        whatsapp_link: REAL_WHATSAPP_LINK,
+        message: 'Click payment link to pay. After payment, you'll get WhatsApp access.'
+      });
+      
+    } catch (error) {
+      res.json({ success: false, error: error.message });
+    }
+  });
+// In your server.js
+app.post('/api/create-payment-link', async (req, res) => {
+    try {
+      const { fullname, email, phone } = req.body;
+      
+      const options = {
+        amount: 5100,
+        currency: 'INR',
+        customer: {
+          name: fullname,
+          email: email,
+          contact: phone
+        },
+        notify: { sms: true, email: true },
+        reminder_enable: true,
+        callback_url: `${req.protocol}://${req.get('host')}/payment-success`,
+        callback_method: 'get'
+      };
+      
+      const paymentLink = await razorpay.paymentLink.create(options);
+      
+      res.json({ 
+        success: true, 
+        link: paymentLink.short_url 
+      });
+    } catch (error) {
+      res.json({ success: false, error: error.message });
+    }
+  });
+
 // ============================================
 // Verify Payment with Razorpay API
 // ============================================
@@ -2230,7 +2314,47 @@ app.post('/api/get-checkout-options', async (req, res) => {
         });
     }
 });
-
+// ============================================
+// PAYMENT CALLBACK ENDPOINT
+// Receives POST from Razorpay after payment
+// ============================================
+app.post('/api/payment-callback', async (req, res) => {
+    try {
+        const { 
+            razorpay_payment_id, 
+            razorpay_order_id, 
+            razorpay_signature 
+        } = req.body;
+        
+        console.log('📞 Payment callback received:', {
+            payment_id: razorpay_payment_id,
+            order_id: razorpay_order_id
+        });
+        
+        // Verify the signature (same as your verify endpoint)
+        const keySecret = process.env.RAZORPAY_LIVE_KEY_SECRET;
+        const body = razorpay_order_id + '|' + razorpay_payment_id;
+        const expectedSignature = crypto
+            .createHmac('sha256', keySecret)
+            .update(body)
+            .digest('hex');
+        
+        const isValid = expectedSignature === razorpay_signature;
+        
+        if (isValid) {
+            // Update your database
+            await updatePaymentStatus(razorpay_payment_id, 'success');
+            
+            // Redirect to success page or return JSON
+            res.redirect(`https://your-site.com/success?payment_id=${razorpay_payment_id}`);
+        } else {
+            res.status(400).send('Invalid signature');
+        }
+    } catch (error) {
+        console.error('❌ Callback error:', error);
+        res.status(500).send('Server error');
+    }
+});
 // ============================================
 // Payment Success Handler (called by frontend)
 // ============================================
