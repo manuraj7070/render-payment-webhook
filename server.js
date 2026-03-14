@@ -948,7 +948,7 @@ app.post('/api/create-workshop-payment', async (req, res) => {
         success: true,
         payment_link: paymentLink.short_url,
         whatsapp_link: REAL_WHATSAPP_LINK,
-        message: 'Click payment link to pay. After payment, you'll get WhatsApp access.'
+        message: 'Click payment link to pay. After payment, you\'ll get WhatsApp access.'
       });
       
     } catch (error) {
