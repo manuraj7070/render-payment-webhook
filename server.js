@@ -511,7 +511,19 @@ async function savePaymentX(paymentId, paymentData) {
         return false;
     }
 }
-
+app.get('/', (req, res) => {
+    res.json({
+        success: true,
+        message: 'Payment Webhook Server is Running',
+        endpoints: {
+            test: '/api/test',
+            publicKey: '/api/get-public-key',
+            checkout: '/api/get-checkout-options (POST)',
+            verify: '/api/verify-payment (POST)'
+        },
+        timestamp: new Date().toISOString()
+    });
+});
 // ============================================
 // FIXED: Test endpoint with better error handling
 // ============================================
