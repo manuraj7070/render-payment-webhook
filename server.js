@@ -854,14 +854,10 @@ app.get('/api/get-public-key', (req, res) => {
     try {
         console.log('🔑 Public key requested from:', req.headers.origin);
         
-        const { razorpay, keyId, isProduction } = getRazorPayCredentials();    
-
-
-        
+        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials();    
         if (!keyId) {
             throw new Error('Key ID not configured in environment variables');
         }
-        
         // Set CORS headers explicitly for this endpoint
         res.header('Access-Control-Allow-Origin', req.headers.origin);
         res.header('Access-Control-Allow-Credentials', 'true');
@@ -899,10 +895,7 @@ app.post('/api/create-order', async (req, res) => {
         }
         
         // Initialize Razorpay
-        const { razorpay, keyId, isProduction } = getRazorPayCredentials();
-            
-        const keySecret = razorpay.secret;
-        
+        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials(); 
         if (!keyId || !keySecret) {
             throw new Error('Razorpay credentials not configured');
         }
@@ -1037,10 +1030,7 @@ app.post('/api/razorpay-verify-payment', async (req, res) => {
 
         // Initialize Razorpay with your live keys
         // Initialize Razorpay
-        const { razorpay, keyId, isProduction } = getRazorPayCredentials();
-            
-        const keySecret = razorpay.secret;
-        
+        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials();
         if (!keyId || !keySecret) {
             throw new Error('Razorpay credentials not configured');
         }
@@ -1100,10 +1090,8 @@ app.post('/api/verify-payment', (req, res) => {
         const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
         
         // Initialize Razorpay
-        const { razorpay, keyId, isProduction } = getRazorPayCredentials();
-            
-        const keySecret = razorpay.secret;
-        
+        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials();
+
         if (!keyId || !keySecret) {
             throw new Error('Razorpay credentials not configured');
         }
@@ -2237,10 +2225,8 @@ app.post('/api/get-checkout-options', async (req, res) => {
         console.log('📦 Generating checkout options for:', { fullname, email, amount });
 
         // Initialize Razorpay
-        const { razorpay, keyId, isProduction } = getRazorPayCredentials();
-            
-        const keySecret = razorpay.secret;
-        
+        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials();
+
         if (!keyId || !keySecret) {
             throw new Error('Razorpay credentials not configured');
         }
@@ -2372,10 +2358,8 @@ app.post('/api/payment-callback', async (req, res) => {
         
         // Verify the signature (same as your verify endpoint)
         // Initialize Razorpay
-        const { razorpay, keyId, isProduction } = getRazorPayCredentials();
-    
-        const keySecret = razorpay.secret;
-        
+        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials();
+
         if (!keyId || !keySecret) {
             throw new Error('Razorpay credentials not configured');
         }
@@ -2416,11 +2400,9 @@ app.post('/api/payment-success', async (req, res) => {
         // Verify payment signature
         const crypto = require('crypto');
         // Initialize Razorpay
-        const { razorpay, keyId, isProduction } = getRazorPayCredentials();
-            
-        const secret = razorpay.secret;
-        
-        if (!keyId || !keySecret) {
+        const { razorpay, keyId, secret, isProduction, isReady } = getRazorPayCredentials();
+
+        if (!keyId || !secret) {
             throw new Error('Razorpay credentials not configured');
         }
 
