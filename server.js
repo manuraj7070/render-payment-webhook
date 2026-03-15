@@ -1099,9 +1099,14 @@ app.post('/api/verify-payment', (req, res) => {
         
         const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
         
-        const keySecret = process.env.RAZORPAY_MODE === 'production' 
-            ? process.env.RAZORPAY_LIVE_KEY_SECRET 
-            : process.env.RAZORPAY_TEST_KEY_SECRET;
+        // Initialize Razorpay
+        const { razorpay, keyId, isProduction } = getRazorPayCredentials();
+            
+        const keySecret = razorpay.secret;
+        
+        if (!keyId || !keySecret) {
+            throw new Error('Razorpay credentials not configured');
+        }
 
         const body = razorpay_order_id + '|' + razorpay_payment_id;
         const expectedSignature = crypto
@@ -2366,7 +2371,14 @@ app.post('/api/payment-callback', async (req, res) => {
         });
         
         // Verify the signature (same as your verify endpoint)
-        const keySecret = process.env.RAZORPAY_LIVE_KEY_SECRET;
+        // Initialize Razorpay
+        const { razorpay, keyId, isProduction } = getRazorPayCredentials();
+    
+        const keySecret = razorpay.secret;
+        
+        if (!keyId || !keySecret) {
+            throw new Error('Razorpay credentials not configured');
+        }
         const body = razorpay_order_id + '|' + razorpay_payment_id;
         const expectedSignature = crypto
             .createHmac('sha256', keySecret)
@@ -2403,9 +2415,14 @@ app.post('/api/payment-success', async (req, res) => {
 
         // Verify payment signature
         const crypto = require('crypto');
-        const secret = process.env.RAZORPAY_MODE === 'production' 
-            ? process.env.RAZORPAY_LIVE_KEY_SECRET 
-            : process.env.RAZORPAY_TEST_KEY_SECRET;
+        // Initialize Razorpay
+        const { razorpay, keyId, isProduction } = getRazorPayCredentials();
+            
+        const secret = razorpay.secret;
+        
+        if (!keyId || !keySecret) {
+            throw new Error('Razorpay credentials not configured');
+        }
 
         const body = razorpay_order_id + '|' + razorpay_payment_id;
         const expectedSignature = crypto
