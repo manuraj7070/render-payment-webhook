@@ -8,81 +8,6 @@ const axios = require('axios');
 const simpleGit = require('simple-git');
 // In-memory store for payment link mappings (add this near other variables)
 const linkToPaymentMap = {};
-
-
-const app = express();
-
-// Get allowed origins from environment variable
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
-    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => {
-        origin = origin.trim();
-        if (origin.startsWith('/') && origin.lastIndexOf('/') > 0) {
-            const pattern = origin.slice(1, origin.lastIndexOf('/'));
-            const flags = origin.slice(origin.lastIndexOf('/') + 1);
-            return new RegExp(pattern, flags);
-        }
-        return origin;
-    })    
-    : [
-        'https://manuraj7070.github.io',
-        'https://sites.google.com',
-        'https://rawcdn.githack.com',
-        'https://www.innershiftnirvaana.space',
-        'https://innershiftnirvaana.space',
-        'https://pay.innershiftnirvaana.space',
-        'https://588380366-atari-embeds.googleusercontent.com',
-        'http://localhost:8080',
-        'http://localhost:3000',
-        /^https:\/\/[a-zA-Z0-9-]+\.googleusercontent\.com$/,
-        /^https:\/\/[a-zA-Z0-9-]+\.google\.com$/
-    ];
-
-console.log('🔓 Allowed CORS origins:', allowedOrigins);
-
-// SINGLE CORS middleware (manual version)
-app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    
-    // Function to check if origin is allowed
-    const isOriginAllowed = (originToCheck) => {
-        if (!originToCheck) return false;
-        
-        return allowedOrigins.some(allowed => {
-            if (allowed instanceof RegExp) {
-                return allowed.test(originToCheck);
-            }
-            if (typeof allowed === 'string' && allowed.includes('*')) {
-                const pattern = allowed.replace(/\*/g, '.*');
-                return new RegExp(pattern).test(originToCheck);
-            }
-            // Special case for localhost
-            if (originToCheck.includes('localhost') && allowed.includes('localhost')) {
-                return true;
-            }
-            return allowed === originToCheck;
-        });
-    };
-    
-    // Set CORS headers if origin is allowed
-    if (origin && isOriginAllowed(origin)) {
-        res.header('Access-Control-Allow-Origin', origin);
-        res.header('Access-Control-Allow-Credentials', 'true');
-        res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-        res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-        res.header('Access-Control-Max-Age', '86400');
-        
-        // Handle preflight
-        if (req.method === 'OPTIONS') {
-            console.log('🔄 Preflight request from:', origin);
-            return res.status(200).end();
-        }
-    }
-    
-    next();
-});
-
-
-
 const { execSync } = require('child_process');
 
 console.log('🔥 SERVER STARTING AT:', new Date().toISOString());
@@ -122,51 +47,6 @@ const razorpayTest = process.env.RAZORPAY_TEST_KEY_ID ? new Razorpay({
     key_id: process.env.RAZORPAY_TEST_KEY_ID,
     key_secret: process.env.RAZORPAY_TEST_KEY_SECRET
 }) : null;
-
-/**
- * Get Razorpay credentials and instance based on environment
- * @returns {Object} Object containing razorpay instance, keyId, and keySecret
- */
-function getRazorPayCredentials() {
-    // Determine which credentials to use based on environment
-    const isProduction = process.env.RAZORPAY_MODE === 'production';
-    
-    const keyId = isProduction 
-        ? process.env.RAZORPAY_LIVE_KEY_ID 
-        : process.env.RAZORPAY_TEST_KEY_ID;
-        
-    const keySecret = isProduction 
-        ? process.env.RAZORPAY_LIVE_KEY_SECRET 
-        : process.env.RAZORPAY_TEST_KEY_SECRET;
-    
-    // Validate credentials
-    if (!keyId || !keySecret) {
-        const environment = isProduction ? 'production' : 'test';
-        throw new Error(`Razorpay credentials not configured for ${environment} environment`);
-    }
-    
-    // Create Razorpay instance
-    const razorpay = new Razorpay({
-        key_id: keyId,
-        key_secret: keySecret
-    });
-    
-    // Log environment (optional, remove in production)
-    if (process.env.NODE_ENV !== 'production') {
-        console.log(`🔧 Razorpay initialized in ${isProduction ? 'production' : 'test'} mode`);
-    }
-    
-    // Return both instance and individual credentials
-    return {
-        razorpay,           // Razorpay instance for making API calls
-        keyId,              // Public key ID (for frontend)
-        keySecret,          // Secret key (keep on backend only)
-        isProduction,       // Environment flag
-        // Convenience method to check if ready
-        isReady: true
-    };
-}
-
 
 // Shutdown handlers
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
@@ -366,6 +246,97 @@ const git = simpleGit({
     GIT_USERNAME: 'manuraj7070',
     GIT_PASSWORD: process.env.GITHUB_TOKEN
 });
+
+const app = express();
+
+
+// Or more specifically, allow only your GitHub domain
+// Get allowed origins from environment variable
+// Get allowed origins - add the specific Google embed domain
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => {
+        origin = origin.trim();
+        // Check if it looks like a regex pattern (starts and ends with /)
+        if (origin.startsWith('/') && origin.lastIndexOf('/') > 0) {
+            const pattern = origin.slice(1, origin.lastIndexOf('/'));
+            const flags = origin.slice(origin.lastIndexOf('/') + 1);
+            return new RegExp(pattern, flags);
+        }
+        return origin;
+    })    
+    : [
+        'https://manuraj7070.github.io',
+        'https://sites.google.com',
+        'https://innershiftnirvaana.space',
+        'https://pay.innershiftnirvaana.space',  // ← ADD THIS LINE
+        'https://588380366-atari-embeds.googleusercontent.com',
+        'http://localhost:8080',  // For local testing
+        'http://localhost:3000',
+        // Add ALL possible Google embed domains
+        // Use proper regex for Google domains
+        /^https:\/\/[a-zA-Z0-9-]+\.googleusercontent\.com$/,  // Matches ANY subdomain
+        /^https:\/\/[a-zA-Z0-9-]+\.google\.com$/              // Matches ANY subdomain
+    ]; 
+
+console.log('🔓 Allowed CORS origins:', allowedOrigins);
+
+app.use(cors({
+    origin: function(origin, callback) {
+        // Allow requests with no origin (like mobile apps, curl)
+        if (!origin) return callback(null, true);
+        
+        // Check if origin matches any allowed pattern
+        const isAllowed = allowedOrigins.some(allowed => {
+            if (allowed instanceof RegExp) {
+                return allowed.test(origin);
+            }
+            // Convert wildcard to regex
+            if (typeof allowed === 'string' && allowed.includes('*')) {
+                const pattern = allowed.replace(/\*/g, '.*');
+                return new RegExp(pattern).test(origin);
+            }
+            return allowed === origin;
+        });
+
+
+        // Check wildcard for googleusercontent.com
+        if (origin.includes('googleusercontent.com')) {
+            return callback(null, true);
+        }
+        
+        if (isAllowed) {
+            callback(null, true);
+        } else {
+            console.log('❌ Blocked origin:', origin);
+            callback(new Error(`Origin ${origin} not allowed by CORS`));
+        }
+    },
+    credentials: true,
+    optionsSuccessStatus: 200
+}));
+
+// Handle preflight requests
+
+app.use(express.json({ limit: '1mb' })); // Limit payload size
+
+
+// Add explicit CORS headers for all responses
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && (
+        origin.includes('.googleusercontent.com') || 
+        origin.includes('.google.com') ||
+        allowedOrigins.includes(origin)
+    )) {
+        res.header('Access-Control-Allow-Origin', origin);
+        res.header('Access-Control-Allow-Credentials', 'true');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
+        res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    }
+    next();
+});
+// Enable CORS for all routes
+// app.use(cors());
 
 // Debug all relevant environment variables
 console.log('🔍 ENVIRONMENT VARIABLES DEBUG:');
@@ -832,55 +803,27 @@ function validateWebhookPayload(body) {
 // ============================================
 app.get('/api/get-public-key', (req, res) => {
     try {
-        console.log('🔑 Public key requested at:', new Date().toISOString());
-        console.log('🔑 Headers:', req.headers);
-        console.log('🔑 Origin:', req.headers.origin);
+        console.log('🔑 Public key requested from:', req.headers.origin);
         
-        // Log environment state
-        console.log('🔍 Current state:', {
-            RAZORPAY_MODE: process.env.RAZORPAY_MODE,
-            NODE_ENV: process.env.NODE_ENV,
-            hasTestKey: !!process.env.RAZORPAY_TEST_KEY_ID,
-            hasLiveKey: !!process.env.RAZORPAY_LIVE_KEY_ID
-        });
+        const keyId = process.env.RAZORPAY_MODE === 'production' 
+            ? process.env.RAZORPAY_LIVE_KEY_ID 
+            : process.env.RAZORPAY_TEST_KEY_ID;
         
-        const credentials = getRazorPayCredentials();
-        console.log('🔑 Credentials loaded:', {
-            hasKeyId: !!credentials.keyId,
-            isProduction: credentials.isProduction,
-            mode: credentials.isProduction ? 'production' : 'test'
-        });
-        
-        if (!credentials.keyId) {
+        if (!keyId) {
             throw new Error('Key ID not configured in environment variables');
         }
         
-        // Set CORS headers
-        const origin = req.headers.origin;
-        if (origin) {
-            res.header('Access-Control-Allow-Origin', origin);
-            res.header('Access-Control-Allow-Credentials', 'true');
-            res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-            res.header('Access-Control-Allow-Headers', 'Content-Type, Accept');
-        }
-        
-        // Handle preflight
-        if (req.method === 'OPTIONS') {
-            return res.status(200).end();
-        }
-        
-        console.log('✅ Sending public key:', credentials.keyId.substring(0, 10) + '...');
+        // Set CORS headers explicitly for this endpoint
+        res.header('Access-Control-Allow-Origin', req.headers.origin);
+        res.header('Access-Control-Allow-Credentials', 'true');
         
         res.json({ 
             success: true, 
-            key_id: credentials.keyId,
-            mode: process.env.RAZORPAY_MODE || 'test',
-            environment: process.env.NODE_ENV
+            key_id: keyId,
+            mode: process.env.RAZORPAY_MODE || 'test'
         });
-        
     } catch (error) {
         console.error('❌ Public key error:', error);
-        console.error('❌ Stack:', error.stack);
         res.status(500).json({ 
             success: false, 
             error: error.message 
@@ -907,10 +850,22 @@ app.post('/api/create-order', async (req, res) => {
         }
         
         // Initialize Razorpay
-        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials(); 
+        const keyId = process.env.RAZORPAY_MODE === 'production' 
+            ? process.env.RAZORPAY_LIVE_KEY_ID 
+            : process.env.RAZORPAY_TEST_KEY_ID;
+            
+        const keySecret = process.env.RAZORPAY_MODE === 'production' 
+            ? process.env.RAZORPAY_LIVE_KEY_SECRET 
+            : process.env.RAZORPAY_TEST_KEY_SECRET;
+        
         if (!keyId || !keySecret) {
             throw new Error('Razorpay credentials not configured');
         }
+        
+        const razorpay = new Razorpay({
+            key_id: keyId,
+            key_secret: keySecret
+        });
 
         // Create order
         const order = await razorpay.orders.create({
@@ -942,156 +897,7 @@ app.post('/api/create-order', async (req, res) => {
         });
     }
 });
-// In your server.js - Complete payment link solution
-app.post('/api/create-workshop-payment', async (req, res) => {
-    try {
-      const { fullname, email, phone } = req.body;
-      
-      // Create payment link with all bells and whistles
-      const options = {
-        amount: 5100,
-        currency: 'INR',
-        accept_partial: false,
-        description: `Addiction Healing Workshop - ₹51`,
-        customer: {
-          name: fullname,
-          email: email,
-          contact: phone
-        },
-        notify: {
-          sms: true,
-          email: true
-        },
-        reminder_enable: true,
-        notes: {
-          fullname: fullname,
-          email: email,
-          phone: phone,
-          whatsapp_group: REAL_WHATSAPP_LINK
-        },
-        // After payment, send them to a page with WhatsApp link
-        callback_url: 'https://your-site.com/payment-success',
-        callback_method: 'get'
-      };
-  
-      const paymentLink = await razorpay.paymentLink.create(options);
-      
-      // Store payment link in database with user data
-      await db.save({
-        paymentLinkId: paymentLink.id,
-        shortUrl: paymentLink.short_url,
-        customer: { fullname, email, phone },
-        createdAt: new Date()
-      });
-      
-      // Return both payment link AND WhatsApp link
-      res.json({
-        success: true,
-        payment_link: paymentLink.short_url,
-        whatsapp_link: REAL_WHATSAPP_LINK,
-        message: 'Click payment link to pay. After payment, you\'ll get WhatsApp access.'
-      });
-      
-    } catch (error) {
-      res.json({ success: false, error: error.message });
-    }
-  });
-// In your server.js
-app.post('/api/create-payment-link', async (req, res) => {
-    try {
-      const { fullname, email, phone } = req.body;
-      
-      const options = {
-        amount: 5100,
-        currency: 'INR',
-        customer: {
-          name: fullname,
-          email: email,
-          contact: phone
-        },
-        notify: { sms: true, email: true },
-        reminder_enable: true,
-        callback_url: `${req.protocol}://${req.get('host')}/payment-success`,
-        callback_method: 'get'
-      };
-      
-      const paymentLink = await razorpay.paymentLink.create(options);
-      
-      res.json({ 
-        success: true, 
-        link: paymentLink.short_url 
-      });
-    } catch (error) {
-      res.json({ success: false, error: error.message });
-    }
-  });
 
-// ============================================
-// Verify Payment with Razorpay API
-// ============================================
-app.post('/api/razorpay-verify-payment', async (req, res) => {
-    try {
-        const { paymentId } = req.body;
-        
-        if (!paymentId) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Payment ID is required' 
-            });
-        }
-
-        // Initialize Razorpay with your live keys
-        // Initialize Razorpay
-        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials();
-        if (!keyId || !keySecret) {
-            throw new Error('Razorpay credentials not configured');
-        }
-
-        // Fetch payment details directly from Razorpay API [citation:8]
-        const payment = await razorpay.payments.fetch(paymentId);
-        
-        // Check if payment exists and is successful [citation:3][citation:6]
-        if (payment && (payment.status === 'captured' || payment.status === 'authorized')) {
-            
-            // You can also fetch additional details like customer info [citation:4]
-            // But payment.fetch already includes most details
-            
-            res.json({
-                success: true,
-                payment: {
-                    id: payment.id,
-                    amount: payment.amount,
-                    currency: payment.currency,
-                    status: payment.status,
-                    method: payment.method,
-                    email: payment.email,
-                    contact: payment.contact,
-                    created_at: payment.created_at
-                }
-            });
-        } else {
-            res.status(404).json({ 
-                success: false, 
-                error: 'Payment not found or not successful' 
-            });
-        }
-    } catch (error) {
-        console.error('❌ Razorpay verification error:', error);
-        
-        // Handle specific Razorpay errors [citation:8]
-        if (error.statusCode === 400) {
-            res.status(400).json({ 
-                success: false, 
-                error: 'Invalid payment ID' 
-            });
-        } else {
-            res.status(500).json({ 
-                success: false, 
-                error: error.message || 'Failed to verify payment' 
-            });
-        }
-    }
-});
 // ============================================
 // Verify payment endpoint
 // ============================================
@@ -1101,12 +907,9 @@ app.post('/api/verify-payment', (req, res) => {
         
         const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
         
-        // Initialize Razorpay
-        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials();
-
-        if (!keyId || !keySecret) {
-            throw new Error('Razorpay credentials not configured');
-        }
+        const keySecret = process.env.RAZORPAY_MODE === 'production' 
+            ? process.env.RAZORPAY_LIVE_KEY_SECRET 
+            : process.env.RAZORPAY_TEST_KEY_SECRET;
 
         const body = razorpay_order_id + '|' + razorpay_payment_id;
         const expectedSignature = crypto
@@ -1658,8 +1461,6 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
-// THEN add your other middleware
-app.use(express.json({ limit: '1mb' }));
 
 // Get payment details using Payment Page ID
 app.get('/api/payment-by-page/:pageId', async (req, res) => {
@@ -2207,10 +2008,6 @@ app.get('/debug/check-file', async (req, res) => {
 // ============================================
 app.post('/api/get-checkout-options', async (req, res) => {
     try {
-    // Prevent caching
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
         const { 
             amount, 
             fullname, 
@@ -2238,12 +2035,15 @@ app.post('/api/get-checkout-options', async (req, res) => {
 
         console.log('📦 Generating checkout options for:', { fullname, email, amount });
 
-        // Initialize Razorpay
-        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials();
-
-        if (!keyId || !keySecret) {
-            throw new Error('Razorpay credentials not configured');
-        }
+        // 1. Get Razorpay instance with proper keys from environment
+        const razorpay = new Razorpay({
+            key_id: process.env.RAZORPAY_MODE === 'production' 
+                ? process.env.RAZORPAY_LIVE_KEY_ID 
+                : process.env.RAZORPAY_TEST_KEY_ID,
+            key_secret: process.env.RAZORPAY_MODE === 'production' 
+                ? process.env.RAZORPAY_LIVE_KEY_SECRET 
+                : process.env.RAZORPAY_TEST_KEY_SECRET
+        });
 
         // 2. Create order first (order_id is required for checkout)
         const orderOptions = {
@@ -2263,6 +2063,11 @@ app.post('/api/get-checkout-options', async (req, res) => {
         console.log('🔄 Creating Razorpay order...');
         const order = await razorpay.orders.create(orderOptions);
         console.log('✅ Order created:', order.id);
+
+        // 3. Get the appropriate key ID based on mode
+        const keyId = process.env.RAZORPAY_MODE === 'production' 
+            ? process.env.RAZORPAY_LIVE_KEY_ID 
+            : process.env.RAZORPAY_TEST_KEY_ID;
 
         // 4. Build the complete options package
         const checkoutOptions = {
@@ -2353,52 +2158,7 @@ app.post('/api/get-checkout-options', async (req, res) => {
         });
     }
 });
-// ============================================
-// PAYMENT CALLBACK ENDPOINT
-// Receives POST from Razorpay after payment
-// ============================================
-app.post('/api/payment-callback', async (req, res) => {
-    try {
-        const { 
-            razorpay_payment_id, 
-            razorpay_order_id, 
-            razorpay_signature 
-        } = req.body;
-        
-        console.log('📞 Payment callback received:', {
-            payment_id: razorpay_payment_id,
-            order_id: razorpay_order_id
-        });
-        
-        // Verify the signature (same as your verify endpoint)
-        // Initialize Razorpay
-        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials();
 
-        if (!keyId || !keySecret) {
-            throw new Error('Razorpay credentials not configured');
-        }
-        const body = razorpay_order_id + '|' + razorpay_payment_id;
-        const expectedSignature = crypto
-            .createHmac('sha256', keySecret)
-            .update(body)
-            .digest('hex');
-        
-        const isValid = expectedSignature === razorpay_signature;
-        
-        if (isValid) {
-            // Update your database
-            await updatePaymentStatus(razorpay_payment_id, 'success');
-            
-            // Redirect to success page or return JSON
-            res.redirect(`https://your-site.com/success?payment_id=${razorpay_payment_id}`);
-        } else {
-            res.status(400).send('Invalid signature');
-        }
-    } catch (error) {
-        console.error('❌ Callback error:', error);
-        res.status(500).send('Server error');
-    }
-});
 // ============================================
 // Payment Success Handler (called by frontend)
 // ============================================
@@ -2413,12 +2173,9 @@ app.post('/api/payment-success', async (req, res) => {
 
         // Verify payment signature
         const crypto = require('crypto');
-        // Initialize Razorpay
-        const { razorpay, keyId, secret, isProduction, isReady } = getRazorPayCredentials();
-
-        if (!keyId || !secret) {
-            throw new Error('Razorpay credentials not configured');
-        }
+        const secret = process.env.RAZORPAY_MODE === 'production' 
+            ? process.env.RAZORPAY_LIVE_KEY_SECRET 
+            : process.env.RAZORPAY_TEST_KEY_SECRET;
 
         const body = razorpay_order_id + '|' + razorpay_payment_id;
         const expectedSignature = crypto
