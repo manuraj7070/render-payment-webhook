@@ -33,7 +33,8 @@ app.get('/test', (req, res) => {
 });
 
 // Catch-all for debugging
-app.use('*', (req, res) => {
+// ✅ Better - this catches all routes
+app.use((req, res) => {
     console.log(`❓ Unknown route: ${req.method} ${req.originalUrl}`);
     res.status(404).json({ error: 'Route not found', path: req.originalUrl });
 });
