@@ -8,6 +8,82 @@ const axios = require('axios');
 const simpleGit = require('simple-git');
 // In-memory store for payment link mappings (add this near other variables)
 const linkToPaymentMap = {};
+
+
+const app = express();
+
+// Get allowed origins from environment variable
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => {
+        origin = origin.trim();
+        if (origin.startsWith('/') && origin.lastIndexOf('/') > 0) {
+            const pattern = origin.slice(1, origin.lastIndexOf('/'));
+            const flags = origin.slice(origin.lastIndexOf('/') + 1);
+            return new RegExp(pattern, flags);
+        }
+        return origin;
+    })    
+    : [
+        'https://manuraj7070.github.io',
+        'https://sites.google.com',
+        'https://rawcdn.githack.com',
+        'https://www.innershiftnirvaana.space',
+        'https://innershiftnirvaana.space',
+        'https://pay.innershiftnirvaana.space',
+        'https://588380366-atari-embeds.googleusercontent.com',
+        'http://localhost:8080',
+        'http://localhost:3000',
+        /^https:\/\/[a-zA-Z0-9-]+\.googleusercontent\.com$/,
+        /^https:\/\/[a-zA-Z0-9-]+\.google\.com$/
+    ];
+
+console.log('🔓 Allowed CORS origins:', allowedOrigins);
+
+// SINGLE CORS middleware (manual version)
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    
+    // Function to check if origin is allowed
+    const isOriginAllowed = (originToCheck) => {
+        if (!originToCheck) return false;
+        
+        return allowedOrigins.some(allowed => {
+            if (allowed instanceof RegExp) {
+                return allowed.test(originToCheck);
+            }
+            if (typeof allowed === 'string' && allowed.includes('*')) {
+                const pattern = allowed.replace(/\*/g, '.*');
+                return new RegExp(pattern).test(originToCheck);
+            }
+            // Special case for localhost
+            if (originToCheck.includes('localhost') && allowed.includes('localhost')) {
+                return true;
+            }
+            return allowed === originToCheck;
+        });
+    };
+    
+    // Set CORS headers if origin is allowed
+    if (origin && isOriginAllowed(origin)) {
+        res.header('Access-Control-Allow-Origin', origin);
+        res.header('Access-Control-Allow-Credentials', 'true');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+        res.header('Access-Control-Max-Age', '86400');
+        
+        // Handle preflight
+        if (req.method === 'OPTIONS') {
+            console.log('🔄 Preflight request from:', origin);
+            return res.status(200).end();
+        }
+    }
+    
+    next();
+});
+
+// THEN add your other middleware
+app.use(express.json({ limit: '1mb' }));
+
 const { execSync } = require('child_process');
 
 console.log('🔥 SERVER STARTING AT:', new Date().toISOString());
@@ -291,101 +367,6 @@ const git = simpleGit({
     GIT_USERNAME: 'manuraj7070',
     GIT_PASSWORD: process.env.GITHUB_TOKEN
 });
-
-const app = express();
-
-
-// Or more specifically, allow only your GitHub domain
-// Get allowed origins from environment variable
-// Get allowed origins - add the specific Google embed domain
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
-    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => {
-        origin = origin.trim();
-        // Check if it looks like a regex pattern (starts and ends with /)
-        if (origin.startsWith('/') && origin.lastIndexOf('/') > 0) {
-            const pattern = origin.slice(1, origin.lastIndexOf('/'));
-            const flags = origin.slice(origin.lastIndexOf('/') + 1);
-            return new RegExp(pattern, flags);
-        }
-        return origin;
-    })    
-    : [
-        'https://manuraj7070.github.io',
-        'https://sites.google.com',
-        'https://rawcdn.githack.com',
-        'https://www.innershiftnirvaana.space',
-        'https://innershiftnirvaana.space',
-        'https://pay.innershiftnirvaana.space',  // ← ADD THIS LINE
-        'https://588380366-atari-embeds.googleusercontent.com',
-        'http://localhost:8080',  // For local testing
-        'http://localhost:3000',
-        // Add ALL possible Google embed domains
-        // Use proper regex for Google domains
-        /^https:\/\/[a-zA-Z0-9-]+\.googleusercontent\.com$/,  // Matches ANY subdomain
-        /^https:\/\/[a-zA-Z0-9-]+\.google\.com$/              // Matches ANY subdomain
-    ]; 
-
-console.log('🔓 Allowed CORS origins:', allowedOrigins);
-
-app.use(cors({
-    origin: function(origin, callback) {
-        // Allow requests with no origin (like mobile apps, curl)
-        if (!origin) return callback(null, true);
-        
-        // Check if origin matches any allowed pattern
-        const isAllowed = allowedOrigins.some(allowed => {
-            if (allowed instanceof RegExp) {
-                return allowed.test(origin);
-            }
-            // Convert wildcard to regex
-            if (typeof allowed === 'string' && allowed.includes('*')) {
-                const pattern = allowed.replace(/\*/g, '.*');
-                return new RegExp(pattern).test(origin);
-            }
-            return allowed === origin;
-        });
-
-
-        // Check wildcard for googleusercontent.com
-        if (origin.includes('googleusercontent.com')) {
-            return callback(null, true);
-        }
-        
-        if (isAllowed) {
-            callback(null, true);
-        } else {
-            console.log('❌ Blocked origin:', origin);
-            callback(new Error(`Origin ${origin} not allowed by CORS`));
-        }
-    },
-    credentials: true,
-    optionsSuccessStatus: 200
-}));
-
-// Explicitly handle OPTIONS preflight requests
-//app.options('/*', cors());
-// Handle preflight requests
-
-app.use(express.json({ limit: '1mb' })); // Limit payload size
-
-
-// Add explicit CORS headers for all responses
-app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    if (origin && (
-        origin.includes('.googleusercontent.com') || 
-        origin.includes('.google.com') ||
-        allowedOrigins.includes(origin)
-    )) {
-        res.header('Access-Control-Allow-Origin', origin);
-        res.header('Access-Control-Allow-Credentials', 'true');
-        res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, DELETE');
-        res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-    }
-    next();
-});
-// Enable CORS for all routes
-// app.use(cors());
 
 // Debug all relevant environment variables
 console.log('🔍 ENVIRONMENT VARIABLES DEBUG:');
