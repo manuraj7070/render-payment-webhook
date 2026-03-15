@@ -81,8 +81,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// THEN add your other middleware
-app.use(express.json({ limit: '1mb' }));
+
 
 const { execSync } = require('child_process');
 
@@ -1659,6 +1658,8 @@ app.post('/webhook', async (req, res) => {
     }
 });
 
+// THEN add your other middleware
+app.use(express.json({ limit: '1mb' }));
 
 // Get payment details using Payment Page ID
 app.get('/api/payment-by-page/:pageId', async (req, res) => {
