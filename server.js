@@ -48,6 +48,51 @@ const razorpayTest = process.env.RAZORPAY_TEST_KEY_ID ? new Razorpay({
     key_secret: process.env.RAZORPAY_TEST_KEY_SECRET
 }) : null;
 
+/**
+ * Get Razorpay credentials and instance based on environment
+ * @returns {Object} Object containing razorpay instance, keyId, and keySecret
+ */
+function getRazorPayCredentials() {
+    // Determine which credentials to use based on environment
+    const isProduction = process.env.RAZORPAY_MODE === 'production';
+    
+    const keyId = isProduction 
+        ? process.env.RAZORPAY_LIVE_KEY_ID 
+        : process.env.RAZORPAY_TEST_KEY_ID;
+        
+    const keySecret = isProduction 
+        ? process.env.RAZORPAY_LIVE_KEY_SECRET 
+        : process.env.RAZORPAY_TEST_KEY_SECRET;
+    
+    // Validate credentials
+    if (!keyId || !keySecret) {
+        const environment = isProduction ? 'production' : 'test';
+        throw new Error(`Razorpay credentials not configured for ${environment} environment`);
+    }
+    
+    // Create Razorpay instance
+    const razorpay = new Razorpay({
+        key_id: keyId,
+        key_secret: keySecret
+    });
+    
+    // Log environment (optional, remove in production)
+    if (process.env.NODE_ENV !== 'production') {
+        console.log(`🔧 Razorpay initialized in ${isProduction ? 'production' : 'test'} mode`);
+    }
+    
+    // Return both instance and individual credentials
+    return {
+        razorpay,           // Razorpay instance for making API calls
+        keyId,              // Public key ID (for frontend)
+        keySecret,          // Secret key (keep on backend only)
+        isProduction,       // Environment flag
+        // Convenience method to check if ready
+        isReady: true
+    };
+}
+
+
 // Shutdown handlers
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
@@ -809,9 +854,9 @@ app.get('/api/get-public-key', (req, res) => {
     try {
         console.log('🔑 Public key requested from:', req.headers.origin);
         
-        const keyId = process.env.RAZORPAY_MODE === 'production' 
-            ? process.env.RAZORPAY_LIVE_KEY_ID 
-            : process.env.RAZORPAY_TEST_KEY_ID;
+        const { razorpay, keyId, isProduction } = getRazorPayCredentials();    
+
+
         
         if (!keyId) {
             throw new Error('Key ID not configured in environment variables');
@@ -854,22 +899,13 @@ app.post('/api/create-order', async (req, res) => {
         }
         
         // Initialize Razorpay
-        const keyId = process.env.RAZORPAY_MODE === 'production' 
-            ? process.env.RAZORPAY_LIVE_KEY_ID 
-            : process.env.RAZORPAY_TEST_KEY_ID;
+        const { razorpay, keyId, isProduction } = getRazorPayCredentials();
             
-        const keySecret = process.env.RAZORPAY_MODE === 'production' 
-            ? process.env.RAZORPAY_LIVE_KEY_SECRET 
-            : process.env.RAZORPAY_TEST_KEY_SECRET;
+        const keySecret = razorpay.secret;
         
         if (!keyId || !keySecret) {
             throw new Error('Razorpay credentials not configured');
         }
-        
-        const razorpay = new Razorpay({
-            key_id: keyId,
-            key_secret: keySecret
-        });
 
         // Create order
         const order = await razorpay.orders.create({
@@ -1000,10 +1036,14 @@ app.post('/api/razorpay-verify-payment', async (req, res) => {
         }
 
         // Initialize Razorpay with your live keys
-        const razorpay = new Razorpay({
-            key_id: process.env.RAZORPAY_LIVE_KEY_ID,
-            key_secret: process.env.RAZORPAY_LIVE_KEY_SECRET
-        });
+        // Initialize Razorpay
+        const { razorpay, keyId, isProduction } = getRazorPayCredentials();
+            
+        const keySecret = razorpay.secret;
+        
+        if (!keyId || !keySecret) {
+            throw new Error('Razorpay credentials not configured');
+        }
 
         // Fetch payment details directly from Razorpay API [citation:8]
         const payment = await razorpay.payments.fetch(paymentId);
@@ -2191,15 +2231,14 @@ app.post('/api/get-checkout-options', async (req, res) => {
 
         console.log('📦 Generating checkout options for:', { fullname, email, amount });
 
-        // 1. Get Razorpay instance with proper keys from environment
-        const razorpay = new Razorpay({
-            key_id: process.env.RAZORPAY_MODE === 'production' 
-                ? process.env.RAZORPAY_LIVE_KEY_ID 
-                : process.env.RAZORPAY_TEST_KEY_ID,
-            key_secret: process.env.RAZORPAY_MODE === 'production' 
-                ? process.env.RAZORPAY_LIVE_KEY_SECRET 
-                : process.env.RAZORPAY_TEST_KEY_SECRET
-        });
+        // Initialize Razorpay
+        const { razorpay, keyId, isProduction } = getRazorPayCredentials();
+            
+        const keySecret = razorpay.secret;
+        
+        if (!keyId || !keySecret) {
+            throw new Error('Razorpay credentials not configured');
+        }
 
         // 2. Create order first (order_id is required for checkout)
         const orderOptions = {
@@ -2219,11 +2258,6 @@ app.post('/api/get-checkout-options', async (req, res) => {
         console.log('🔄 Creating Razorpay order...');
         const order = await razorpay.orders.create(orderOptions);
         console.log('✅ Order created:', order.id);
-
-        // 3. Get the appropriate key ID based on mode
-        const keyId = process.env.RAZORPAY_MODE === 'production' 
-            ? process.env.RAZORPAY_LIVE_KEY_ID 
-            : process.env.RAZORPAY_TEST_KEY_ID;
 
         // 4. Build the complete options package
         const checkoutOptions = {
