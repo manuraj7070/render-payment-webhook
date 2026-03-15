@@ -852,23 +852,55 @@ function validateWebhookPayload(body) {
 // ============================================
 app.get('/api/get-public-key', (req, res) => {
     try {
-        console.log('🔑 Public key requested from:', req.headers.origin);
+        console.log('🔑 Public key requested at:', new Date().toISOString());
+        console.log('🔑 Headers:', req.headers);
+        console.log('🔑 Origin:', req.headers.origin);
         
-        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials();    
-        if (!keyId) {
+        // Log environment state
+        console.log('🔍 Current state:', {
+            RAZORPAY_MODE: process.env.RAZORPAY_MODE,
+            NODE_ENV: process.env.NODE_ENV,
+            hasTestKey: !!process.env.RAZORPAY_TEST_KEY_ID,
+            hasLiveKey: !!process.env.RAZORPAY_LIVE_KEY_ID
+        });
+        
+        const credentials = getRazorPayCredentials();
+        console.log('🔑 Credentials loaded:', {
+            hasKeyId: !!credentials.keyId,
+            isProduction: credentials.isProduction,
+            mode: credentials.isProduction ? 'production' : 'test'
+        });
+        
+        if (!credentials.keyId) {
             throw new Error('Key ID not configured in environment variables');
         }
-        // Set CORS headers explicitly for this endpoint
-        res.header('Access-Control-Allow-Origin', req.headers.origin);
-        res.header('Access-Control-Allow-Credentials', 'true');
+        
+        // Set CORS headers
+        const origin = req.headers.origin;
+        if (origin) {
+            res.header('Access-Control-Allow-Origin', origin);
+            res.header('Access-Control-Allow-Credentials', 'true');
+            res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+            res.header('Access-Control-Allow-Headers', 'Content-Type, Accept');
+        }
+        
+        // Handle preflight
+        if (req.method === 'OPTIONS') {
+            return res.status(200).end();
+        }
+        
+        console.log('✅ Sending public key:', credentials.keyId.substring(0, 10) + '...');
         
         res.json({ 
             success: true, 
-            key_id: keyId,
-            mode: process.env.RAZORPAY_MODE || 'test'
+            key_id: credentials.keyId,
+            mode: process.env.RAZORPAY_MODE || 'test',
+            environment: process.env.NODE_ENV
         });
+        
     } catch (error) {
         console.error('❌ Public key error:', error);
+        console.error('❌ Stack:', error.stack);
         res.status(500).json({ 
             success: false, 
             error: error.message 
