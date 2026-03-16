@@ -3,315 +3,11 @@ const fs = require('fs').promises;
 const path = require('path');
 const crypto = require('crypto');
 const Razorpay = require('razorpay');
-const cors = require('cors');
 const axios = require('axios');
 const simpleGit = require('simple-git');
 // In-memory store for payment link mappings (add this near other variables)
 const linkToPaymentMap = {};
 
-
-const app = express();
-
-// Get allowed origins from environment variable
-const allowedOrigins = process.env.ALLOWED_ORIGINS 
-    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => {
-        origin = origin.trim();
-        if (origin.startsWith('/') && origin.lastIndexOf('/') > 0) {
-            const pattern = origin.slice(1, origin.lastIndexOf('/'));
-            const flags = origin.slice(origin.lastIndexOf('/') + 1);
-            return new RegExp(pattern, flags);
-        }
-        return origin;
-    })    
-    : [
-        'https://manuraj7070.github.io',
-        'https://sites.google.com',
-        'https://rawcdn.githack.com',
-        'https://www.innershiftnirvaana.space',
-        'https://innershiftnirvaana.space',
-        'https://pay.innershiftnirvaana.space',
-        'https://588380366-atari-embeds.googleusercontent.com',
-        'http://localhost:8080',
-        'http://localhost:3000',
-        /^https:\/\/[a-zA-Z0-9-]+\.googleusercontent\.com$/,
-        /^https:\/\/[a-zA-Z0-9-]+\.google\.com$/
-    ];
-
-console.log('🔓 Allowed CORS origins:', allowedOrigins);
-
-
-
-const { execSync } = require('child_process');
-
-console.log('🔥 SERVER STARTING AT:', new Date().toISOString());
-console.log('📦 Node version:', process.version);
-console.log('🔧 Environment:', process.env.RAZORPAY_MODE || 'not set');
-
-// Initialize on startup
-let GITHUB_READY = false;
-// Error handling for uncaught exceptions
-process.on('uncaughtException', (error) => {
-    console.error('🔥 Uncaught Exception:', error);
-    console.error(error?.stack || error || 'Unknown error');
-    // Keep running - don't crash on errors
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-    console.error('🔥 Unhandled Rejection at:', promise);
-    console.error('Reason:', reason);
-});
-
-// Add at the VERY TOP of server.js
-console.log('🔍 DEBUG: Starting server with environment check:');
-console.log('RAZORPAY_MODE:', process.env.RAZORPAY_MODE || 'not set');
-console.log('RAZORPAY_TEST_KEY_ID present:', !!process.env.RAZORPAY_TEST_KEY_ID);
-console.log('RAZORPAY_TEST_KEY_SECRET present:', !!process.env.RAZORPAY_TEST_KEY_SECRET);
-console.log('RAZORPAY_LIVE_KEY_ID present:', !!process.env.RAZORPAY_LIVE_KEY_ID);
-console.log('RAZORPAY_LIVE_KEY_SECRET present:', !!process.env.RAZORPAY_LIVE_KEY_SECRET);
-//console.log('ALL env vars:', Object.keys(process.env).filter(key => key.includes('RAZORPAY')).join(', '));
-
-const razorpay = new Razorpay({
-    key_id: process.env.RAZORPAY_LIVE_KEY_ID,
-    key_secret: process.env.RAZORPAY_LIVE_KEY_SECRET
-});
-
-// Also initialize test instance if needed
-const razorpayTest = process.env.RAZORPAY_TEST_KEY_ID ? new Razorpay({
-    key_id: process.env.RAZORPAY_TEST_KEY_ID,
-    key_secret: process.env.RAZORPAY_TEST_KEY_SECRET
-}) : null;
-
-/**
- * Get Razorpay credentials and instance based on environment
- * @returns {Object} Object containing razorpay instance, keyId, and keySecret
- */
-function getRazorPayCredentials() {
-    // Determine which credentials to use based on environment
-    const isProduction = process.env.RAZORPAY_MODE === 'production';
-    
-    const keyId = isProduction 
-        ? process.env.RAZORPAY_LIVE_KEY_ID 
-        : process.env.RAZORPAY_TEST_KEY_ID;
-        
-    const keySecret = isProduction 
-        ? process.env.RAZORPAY_LIVE_KEY_SECRET 
-        : process.env.RAZORPAY_TEST_KEY_SECRET;
-    
-    // Validate credentials
-    if (!keyId || !keySecret) {
-        const environment = isProduction ? 'production' : 'test';
-        throw new Error(`Razorpay credentials not configured for ${environment} environment`);
-    }
-    
-    // Create Razorpay instance
-    const razorpay = new Razorpay({
-        key_id: keyId,
-        key_secret: keySecret
-    });
-    
-    // Log environment (optional, remove in production)
-    if (process.env.NODE_ENV !== 'production') {
-        console.log(`🔧 Razorpay initialized in ${isProduction ? 'production' : 'test'} mode`);
-    }
-    
-    // Return both instance and individual credentials
-    return {
-        razorpay,           // Razorpay instance for making API calls
-        keyId,              // Public key ID (for frontend)
-        keySecret,          // Secret key (keep on backend only)
-        isProduction,       // Environment flag
-        // Convenience method to check if ready
-        isReady: true
-    };
-}
-
-
-// Shutdown handlers
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
-const GITHUB_REPO = 'manuraj7070/render-payment-webhook';
-const GITHUB_BRANCH = 'main';
-const REPO_URL = `https://manuraj7070:${GITHUB_TOKEN}@github.com/${GITHUB_REPO}.git`;
-const LOCAL_REPO_PATH = path.join(__dirname, 'repo-cache');
-// Configuration
-const GIT_REPO = process.env.GITHUB_REPO || 'manuraj7070/render-payment-webhook';
-const GIT_BRANCH = process.env.GITHUB_BRANCH || 'main';
-const GIT_TOKEN = process.env.GITHUB_TOKEN;
-// Change from /tmp to the repo-cache path
-const PAYMENTS_FILE = path.join(LOCAL_REPO_PATH, 'payments.json');
-const LOG_FILE = path.join(LOCAL_REPO_PATH, 'webhook.log');
-
-// Initialize git repository if it doesn't exist
-function initGitRepo() {
-    try {
-        // Check if .git directory exists
-        if (!fs.existsSync(path.join(__dirname, '.git'))) {
-            console.log('📁 Initializing git repository...');
-            execSync('git init', { stdio: 'inherit' });
-            execSync('git config --global user.email "manuraj7070@users.noreply.github.com"', { stdio: 'inherit' });
-            execSync('git config --global user.name "manuraj7070"', { stdio: 'inherit' });
-            execSync('git remote add origin https://manuraj7070:${process.env.GITHUB_TOKEN}@github.com/manuraj7070/render-payment-webhook.git', { stdio: 'inherit' });
-            console.log('✅ Git repository initialized');
-        }
-        
-        // Pull latest changes
-        try {
-            execSync('git pull origin main --rebase', { stdio: 'inherit' });
-            console.log('✅ Synced with GitHub');
-        } catch (pullError) {
-            console.log('⚠️ Could not pull from GitHub:', pullError.message);
-        }
-        
-        return true;
-    } catch (error) {
-        console.log('⚠️ Git initialization failed:', error.message);
-        return false;
-    }
-}
-
-// Call this in your startServer function
-//const GIT_AVAILABLE = initGitRepo();
-
-
-
-// Initialize git repository for storage
-// Initialize git repository for storage
-async function initGitStorage() {
-    if (!GITHUB_TOKEN) {
-        console.log('⚠️ GITHUB_TOKEN not set - GitHub sync disabled');
-        return false;
-    }
-
-    try {
-        // Create repo-cache directory if it doesn't exist
-        await fs.mkdir(LOCAL_REPO_PATH, { recursive: true });
-        
-        // Check if already cloned
-        try {
-            await fs.access(path.join(LOCAL_REPO_PATH, '.git'));
-            console.log('📁 Git repository exists, pulling latest...');
-            
-            // Pull latest changes
-            const pullResult = execSync(`cd ${LOCAL_REPO_PATH} && git pull`, { 
-                encoding: 'utf8',
-                stdio: 'pipe' 
-            });
-            console.log('📥 Pull result:', pullResult.trim());
-            
-        } catch (err) {
-            // Clone the repository
-            console.log('📦 Cloning repository...');
-            const cloneResult = execSync(`git clone ${REPO_URL} ${LOCAL_REPO_PATH}`, { 
-                encoding: 'utf8',
-                stdio: 'pipe' 
-            });
-            console.log('✅ Clone successful');
-        }
-        
-        // Configure git user for commits
-        execSync(`cd ${LOCAL_REPO_PATH} && git config user.email "manuraj7070@users.noreply.github.com"`, { stdio: 'ignore' });
-        execSync(`cd ${LOCAL_REPO_PATH} && git config user.name "manuraj7070"`, { stdio: 'ignore' });
-        
-        console.log('✅ GitHub storage initialized');
-        return true;
-        
-    } catch (error) {
-        console.error('❌ Failed to initialize GitHub storage:', error.message);
-        return false;
-    }
-}
-
-// Enhanced savePayment with GitHub sync
-// Save payment with GitHub sync
-async function savePayment(paymentId, paymentData) {
-    try {
-        // Load current payments
-        const payments = await getPayments(true);
-        console.log('📝 savePayment called for:', paymentId);
-        console.log('📁 Target file:', PAYMENTS_FILE);
-
-        // Add new payment
-        payments[paymentId] = {
-            ...paymentData,
-            timestamp: paymentData.timestamp || new Date().toISOString(),
-            receivedAt: new Date().toISOString()
-        };
-        
-        // Before git add, ensure file exists
-        try {
-            await fs.access(path.join(LOCAL_REPO_PATH, 'payments.json'));
-        } catch {
-            await fs.writeFile(path.join(LOCAL_REPO_PATH, 'payments.json'), '{}');
-        }       
-
-        console.log('💾 Saving payment to:', PAYMENTS_FILE);
-        console.log('📁 Payment data:', paymentId);
-
-        // Save to file in repo
-        await fs.writeFile(PAYMENTS_FILE, JSON.stringify(payments, null, 2));
-        console.log(`✅ Payment ${paymentId} saved locally`);
-        
-        // Commit and push to GitHub if token exists
-        if (GITHUB_TOKEN) {
-            try {
-                // Commit the change
-                execSync(`
-                    cd ${LOCAL_REPO_PATH} &&
-                    git add payments.json &&
-                    git commit -m "💾 Add payment ${paymentId}" --allow-empty &&
-                    git push
-                `, { stdio: 'pipe' });
-                
-                console.log(`✅ Payment ${paymentId} synced to GitHub`);
-            } catch (gitError) {
-                console.error('⚠️ GitHub sync failed:', gitError.message);
-                // Don't fail - payment is still saved locally
-            }
-        }
-        
-        return true;
-        
-    } catch (error) {
-        console.error('❌ Failed to save payment:', error.message);
-        return false;
-    }
-}
-
-// Load payments with GitHub backup
-// Load payments with GitHub backup
-async function loadPayments() {
-    // First try local file in repo
-    try {
-        const data = await fs.readFile(PAYMENTS_FILE, 'utf8');
-        const payments = JSON.parse(data);
-        console.log(`✅ Loaded ${Object.keys(payments).length} payments from local`);
-        return payments;
-        
-    } catch (localError) {
-        console.log('No local payments file found');
-        
-        // If GitHub token exists, try to pull from GitHub
-        if (GITHUB_TOKEN) {
-            try {
-                // Pull latest from GitHub
-                execSync(`cd ${LOCAL_REPO_PATH} && git pull`, { stdio: 'pipe' });
-                
-                // Try reading again after pull
-                const data = await fs.readFile(PAYMENTS_FILE, 'utf8');
-                const payments = JSON.parse(data);
-                console.log(`✅ Loaded ${Object.keys(payments).length} payments from GitHub`);
-                return payments;
-                
-            } catch (githubError) {
-                console.log('No payments found on GitHub either');
-            }
-        }
-        
-        // Start fresh
-        return {};
-    }
-}
 
 
 // Initialize git with token
@@ -324,6 +20,54 @@ const git = simpleGit({
     GIT_USERNAME: 'manuraj7070',
     GIT_PASSWORD: process.env.GITHUB_TOKEN
 });
+
+const app = express();
+app.use(express.json({ limit: '1mb' })); // Limit payload size
+
+const cors = require('cors');
+
+// Enable CORS for all routes
+// app.use(cors());
+
+// Or more specifically, allow only your GitHub domain
+// Get allowed origins from environment variable
+// Get allowed origins from environment variable
+// Get allowed origins - add the specific Google embed domain
+// Get allowed origins - add the specific Google embed domain
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+    ? process.env.ALLOWED_ORIGINS.split(',').map(origin => origin.trim())
+    : [
+        'https://manuraj7070.github.io',
+        'https://innershiftnirvaana.space',
+        'https://pay.innershiftnirvaana.space',  // ← ADD THIS LINE
+        'https://588380366-atari-embeds.googleusercontent.com',
+        'https://*.googleusercontent.com'
+      ]; 
+
+console.log('🔓 Allowed CORS origins:', allowedOrigins);
+
+app.use(cors({
+    origin: function(origin, callback) {
+        // Allow requests with no origin (like mobile apps, curl)
+        if (!origin) return callback(null, true);
+        
+        // Check exact match first
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        
+        // Check wildcard for googleusercontent.com
+        if (origin.includes('googleusercontent.com')) {
+            return callback(null, true);
+        }
+        
+        console.log('❌ Blocked CORS from:', origin);
+        callback(new Error('Not allowed by CORS'));
+    },
+    methods: ['GET', 'POST', 'OPTIONS'],
+    allowedHeaders: ['Content-Type'],
+    credentials: true
+}));
 
 // Debug all relevant environment variables
 console.log('🔍 ENVIRONMENT VARIABLES DEBUG:');
@@ -343,7 +87,8 @@ console.log('- RAILWAY_PUBLIC_DOMAIN:', process.env.RAILWAY_PUBLIC_DOMAIN ? '✅
 const PORT = process.env.PORT || 3000;
 const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET;
 const DATA_DIR = process.env.DATA_DIR || '/tmp';
-
+let PAYMENTS_FILE = path.join(DATA_DIR, 'payments.json');
+let LOG_FILE = path.join(DATA_DIR, 'webhook.log');
 // Add this near the top with other variables
 let paymentsCache = null;  // In-memory cache
 let lastCacheUpdate = 0;
@@ -354,7 +99,7 @@ const MAX_PAYMENTS = 10000; // Prevent unlimited file growth
 // ============================================
 // Helper function to create Razorpay instance from request
 // ============================================
-/* function getRazorpayInstance(keyId, keySecret) {
+function getRazorpayInstance(keyId, keySecret) {
     if (!keyId || !keySecret) {
         throw new Error('Razorpay key_id and key_secret are required');
     }
@@ -362,7 +107,7 @@ const MAX_PAYMENTS = 10000; // Prevent unlimited file growth
         key_id: keyId,
         key_secret: keySecret
     });
-} */
+}
 // Ensure directories exist
 async function ensureDirectories() {
     try {
@@ -387,7 +132,7 @@ async function ensureWritableFile() {
 
 // Load payments with error recovery
 // Load payments with error recovery
-async function loadPaymentsX() {
+async function loadPayments() {
     try {
         console.log(`📂 Attempting to read from: ${PAYMENTS_FILE}`);
         const data = await fs.readFile(PAYMENTS_FILE, 'utf8');
@@ -411,7 +156,7 @@ async function loadPaymentsX() {
         return {};
     }
 }
-// Modified getPayments to use cache
+// Modified loadPayments to use cache
 async function getPayments(forceRefresh = false) {
     const now = Date.now();
     
@@ -453,7 +198,7 @@ async function syncToGitHub() {
 }
 // Save payment with atomic write
 // Save payment with atomic write and GitHub sync
-async function savePaymentX(paymentId, paymentData) {
+async function savePayment(paymentId, paymentData) {
     try {
         // Load current payments (bypass cache to get latest)
         const payments = await getPayments(true); // Force refresh
@@ -498,243 +243,7 @@ async function savePaymentX(paymentId, paymentData) {
         return false;
     }
 }
-app.get('/', (req, res) => {
-    res.json({
-        success: true,
-        message: 'Payment Webhook Server is Running',
-        endpoints: {
-            test: '/api/test',
-            publicKey: '/api/get-public-key',
-            checkout: '/api/get-checkout-options (POST)',
-            verify: '/api/verify-payment (POST)'
-        },
-        timestamp: new Date().toISOString()
-    });
-});
-// ============================================
-// FIXED: Test endpoint with better error handling
-// ============================================
-app.get('/api/test', (req, res) => {
-    try {
-        console.log('✅ Test endpoint hit from origin:', req.headers.origin);
-        res.json({ 
-            success: true, 
-            message: 'Server is running!',
-            timestamp: new Date().toISOString(),
-            mode: process.env.RAZORPAY_MODE || 'test',
-            origin: req.headers.origin
-        });
-    } catch (error) {
-        console.error('❌ Test endpoint error:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message 
-        });
-    }
-});
 
-// ============================================
-// Save Payment Data with Customer Details
-// ============================================
-app.post('/api/save-payment-details', async (req, res) => {
-    try {
-        const { 
-            paymentId,
-            customerName,
-            customerEmail,
-            customerPhone,
-            orderId,
-            amount,
-            workshopName,
-            workshopDate
-        } = req.body;
-
-        if (!paymentId || !customerName || !customerPhone) {
-            return res.status(400).json({
-                success: false,
-                error: 'Payment ID, customer name and phone are required'
-            });
-        }
-
-        // Load existing payments
-        const payments = await getPayments(true);
-        
-        // Update or create payment record
-        if (payments[paymentId]) {
-            payments[paymentId] = {
-                ...payments[paymentId],
-                customerName,
-                customerEmail: customerEmail || payments[paymentId].email,
-                customerPhone,
-                orderId: orderId || payments[paymentId].orderId,
-                amount: amount || payments[paymentId].amount,
-                workshopName: workshopName || 'Workshop Registration',
-                workshopDate: workshopDate || new Date().toISOString().split('T')[0],
-                whatsappLinkGenerated: true,
-                whatsappLinkGeneratedAt: new Date().toISOString()
-            };
-        } else {
-            // New payment record
-            payments[paymentId] = {
-                paymentId,
-                customerName,
-                customerEmail: customerEmail || 'Not provided',
-                customerPhone,
-                orderId: orderId || 'N/A',
-                amount: amount || 0,
-                workshopName: workshopName || 'Workshop Registration',
-                workshopDate: workshopDate || new Date().toISOString().split('T')[0],
-                status: 'completed',
-                timestamp: new Date().toISOString(),
-                whatsappLinkGenerated: true,
-                whatsappLinkGeneratedAt: new Date().toISOString()
-            };
-        }
-
-        // Save to file
-        await savePayment(paymentId, payments[paymentId]);
-        
-        // Generate WhatsApp link
-        const whatsappMessage = encodeURIComponent(
-            `Hello ${customerName}! Thank you for registering for ${workshopName || 'the workshop'}. ` +
-            `Your payment ID is ${paymentId}. Click here to join the WhatsApp group.`
-        );
-        const whatsappLink = `https://wa.me/${customerPhone}?text=${whatsappMessage}`;
-
-        res.json({
-            success: true,
-            message: 'Payment details saved successfully',
-            paymentId,
-            whatsappLink,
-            customer: {
-                name: customerName,
-                email: customerEmail,
-                phone: customerPhone
-            }
-        });
-
-    } catch (error) {
-        console.error('❌ Error saving payment details:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// ============================================
-// Get Payment Details by Payment ID or Phone
-// ============================================
-app.post('/api/get-payment-details', async (req, res) => {
-    try {
-        const { paymentId, customerPhone } = req.body;
-
-        if (!paymentId && !customerPhone) {
-            return res.status(400).json({
-                success: false,
-                error: 'Either paymentId or customerPhone is required'
-            });
-        }
-
-        const payments = await getPayments(true);
-        let matchingPayments = [];
-
-        if (paymentId) {
-            // Search by payment ID
-            if (payments[paymentId]) {
-                matchingPayments = [{
-                    paymentId,
-                    ...payments[paymentId]
-                }];
-            }
-        } else if (customerPhone) {
-            // Search by phone number
-            matchingPayments = Object.entries(payments)
-                .filter(([_, data]) => data.customerPhone === customerPhone)
-                .map(([id, data]) => ({
-                    paymentId: id,
-                    ...data
-                }))
-                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        }
-
-        if (matchingPayments.length > 0) {
-            // Generate WhatsApp links for each payment
-            const results = matchingPayments.map(payment => {
-                const message = encodeURIComponent(
-                    `Hello ${payment.customerName || 'there'}! Regarding your payment (ID: ${payment.paymentId}) ` +
-                    `for ${payment.workshopName || 'the workshop'}. Join our WhatsApp group here.`
-                );
-                return {
-                    ...payment,
-                    whatsappLink: `https://wa.me/${payment.customerPhone || customerPhone}?text=${message}`
-                };
-            });
-
-            res.json({
-                success: true,
-                count: results.length,
-                payments: results
-            });
-        } else {
-            res.json({
-                success: false,
-                message: 'No payments found matching your criteria'
-            });
-        }
-
-    } catch (error) {
-        console.error('❌ Error fetching payment details:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// ============================================
-// Generate WhatsApp Link API
-// ============================================
-app.post('/api/generate-whatsapp-link', async (req, res) => {
-    try {
-        const { 
-            paymentId,
-            customerName,
-            customerPhone,
-            customMessage 
-        } = req.body;
-
-        if (!paymentId || !customerPhone) {
-            return res.status(400).json({
-                success: false,
-                error: 'Payment ID and customer phone are required'
-            });
-        }
-
-        // Default message
-        const defaultMessage = customMessage || 
-            `Hello ${customerName || 'there'}! Your payment (ID: ${paymentId}) is confirmed. ` +
-            `Click here to join the WhatsApp group.`;
-
-        const whatsappLink = `https://wa.me/${customerPhone}?text=${encodeURIComponent(defaultMessage)}`;
-
-        res.json({
-            success: true,
-            paymentId,
-            customerName,
-            customerPhone,
-            whatsappLink,
-            message: defaultMessage
-        });
-
-    } catch (error) {
-        console.error('❌ Error generating WhatsApp link:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
 // Verify Razorpay signature
 function verifySignature(body, signature) {
     if (!WEBHOOK_SECRET || !signature) {
@@ -779,361 +288,123 @@ function validateWebhookPayload(body) {
 // ============================================
 // NEW ENDPOINT: Create Razorpay Order (with credentials in payload)
 // ============================================
-// Endpoint to get PUBLIC key only
-// ============================================
-// CORRECT IMPLEMENTATION - Keys ONLY from environment
-// ============================================
-
-
-// ============================================
-// FIXED: Get public key endpoint
-// ============================================
-app.get('/api/get-public-key', (req, res) => {
-    try {
-        console.log('🔑 Public key requested at:', new Date().toISOString());
-        console.log('🔑 Headers:', req.headers);
-        console.log('🔑 Origin:', req.headers.origin);
-        
-        // Log environment state
-        console.log('🔍 Current state:', {
-            RAZORPAY_MODE: process.env.RAZORPAY_MODE,
-            NODE_ENV: process.env.NODE_ENV,
-            hasTestKey: !!process.env.RAZORPAY_TEST_KEY_ID,
-            hasLiveKey: !!process.env.RAZORPAY_LIVE_KEY_ID
-        });
-        
-        const credentials = getRazorPayCredentials();
-        console.log('🔑 Credentials loaded:', {
-            hasKeyId: !!credentials.keyId,
-            isProduction: credentials.isProduction,
-            mode: credentials.isProduction ? 'production' : 'test'
-        });
-        
-        if (!credentials.keyId) {
-            throw new Error('Key ID not configured in environment variables');
-        }
-        
-        // Set CORS headers
-        const origin = req.headers.origin;
-        if (origin) {
-            res.header('Access-Control-Allow-Origin', origin);
-            res.header('Access-Control-Allow-Credentials', 'true');
-            res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
-            res.header('Access-Control-Allow-Headers', 'Content-Type, Accept');
-        }
-        
-        // Handle preflight
-        if (req.method === 'OPTIONS') {
-            return res.status(200).end();
-        }
-        
-        console.log('✅ Sending public key:', credentials.keyId.substring(0, 10) + '...');
-        
-        res.json({ 
-            success: true, 
-            key_id: credentials.keyId,
-            mode: process.env.RAZORPAY_MODE || 'test',
-            environment: process.env.NODE_ENV
-        });
-        
-    } catch (error) {
-        console.error('❌ Public key error:', error);
-        console.error('❌ Stack:', error.stack);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message 
-        });
-    }
-});
-
-// ============================================
-// FIXED: Create order endpoint
-// ============================================
 app.post('/api/create-order', async (req, res) => {
     try {
-        console.log('💰 Create order request from:', req.headers.origin);
-        console.log('📦 Request body:', req.body);
+        const { 
+            amount, 
+            currency = 'INR', 
+            receipt, 
+            notes,
+            key_id,          // Razorpay Key ID from frontend
+            key_secret        // Razorpay Key Secret from frontend
+        } = req.body;
         
-        const { amount, fullname, email, phone } = req.body;
-        
-        // Validate inputs
-        if (!amount || amount <= 0) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Invalid amount' 
+        // Validate required fields
+        if (!key_id || !key_secret) {
+            return res.status(400).json({
+                success: false,
+                error: 'Razorpay credentials (key_id, key_secret) are required'
             });
         }
-        
-        // Initialize Razorpay
-        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials(); 
-        if (!keyId || !keySecret) {
-            throw new Error('Razorpay credentials not configured');
+
+        // Validate amount
+        if (!amount || amount <= 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid amount. Must be greater than 0'
+            });
         }
 
-        // Create order
-        const order = await razorpay.orders.create({
-            amount: amount * 100,
-            currency: 'INR',
-            receipt: `receipt_${Date.now()}`,
-            notes: { fullname, email, phone }
-        });
+        console.log(`💰 Creating order for amount: ₹${amount} with key: ${key_id.substring(0, 8)}...`);
 
-        console.log('✅ Order created:', order.id);
-        
-        // Set CORS headers
-        res.header('Access-Control-Allow-Origin', req.headers.origin);
-        res.header('Access-Control-Allow-Credentials', 'true');
-        
+        // Create Razorpay instance with provided credentials
+        const razorpay = getRazorpayInstance(key_id, key_secret);
+
+        // Create order in Razorpay
+        const orderOptions = {
+            amount: amount * 100, // Convert to paise
+            currency: currency,
+            receipt: receipt || `receipt_${Date.now()}`,
+            payment_capture: 1, // Auto capture payment
+            notes: notes || {}
+        };
+
+        const order = await razorpay.orders.create(orderOptions);
+
+        console.log(`✅ Order created: ${order.id}`);
+
+        // Return order details to frontend
         res.json({
             success: true,
             order_id: order.id,
             amount: order.amount,
             currency: order.currency,
-            key_id: keyId  // Send key_id for frontend
+            receipt: order.receipt,
+            status: order.status
+            // Don't send key_id back - already have it
         });
-        
+
     } catch (error) {
         console.error('❌ Order creation error:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message 
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to create order'
         });
     }
 });
-// In your server.js - Complete payment link solution
-app.post('/api/create-workshop-payment', async (req, res) => {
-    try {
-      const { fullname, email, phone } = req.body;
-      
-      // Create payment link with all bells and whistles
-      const options = {
-        amount: 5100,
-        currency: 'INR',
-        accept_partial: false,
-        description: `Addiction Healing Workshop - ₹51`,
-        customer: {
-          name: fullname,
-          email: email,
-          contact: phone
-        },
-        notify: {
-          sms: true,
-          email: true
-        },
-        reminder_enable: true,
-        notes: {
-          fullname: fullname,
-          email: email,
-          phone: phone,
-          whatsapp_group: REAL_WHATSAPP_LINK
-        },
-        // After payment, send them to a page with WhatsApp link
-        callback_url: 'https://your-site.com/payment-success',
-        callback_method: 'get'
-      };
-  
-      const paymentLink = await razorpay.paymentLink.create(options);
-      
-      // Store payment link in database with user data
-      await db.save({
-        paymentLinkId: paymentLink.id,
-        shortUrl: paymentLink.short_url,
-        customer: { fullname, email, phone },
-        createdAt: new Date()
-      });
-      
-      // Return both payment link AND WhatsApp link
-      res.json({
-        success: true,
-        payment_link: paymentLink.short_url,
-        whatsapp_link: REAL_WHATSAPP_LINK,
-        message: 'Click payment link to pay. After payment, you\'ll get WhatsApp access.'
-      });
-      
-    } catch (error) {
-      res.json({ success: false, error: error.message });
-    }
-  });
-// In your server.js
-app.post('/api/create-payment-link', async (req, res) => {
-    try {
-      const { fullname, email, phone } = req.body;
-      
-      const options = {
-        amount: 5100,
-        currency: 'INR',
-        customer: {
-          name: fullname,
-          email: email,
-          contact: phone
-        },
-        notify: { sms: true, email: true },
-        reminder_enable: true,
-        callback_url: `${req.protocol}://${req.get('host')}/payment-success`,
-        callback_method: 'get'
-      };
-      
-      const paymentLink = await razorpay.paymentLink.create(options);
-      
-      res.json({ 
-        success: true, 
-        link: paymentLink.short_url 
-      });
-    } catch (error) {
-      res.json({ success: false, error: error.message });
-    }
-  });
 
 // ============================================
-// Verify Payment with Razorpay API
+// NEW ENDPOINT: Verify Payment Signature (with credentials in payload)
 // ============================================
-app.post('/api/razorpay-verify-payment', async (req, res) => {
+app.post('/api/verify-payment', async (req, res) => {
     try {
-        const { paymentId } = req.body;
-        
-        if (!paymentId) {
-            return res.status(400).json({ 
-                success: false, 
-                error: 'Payment ID is required' 
+        const { 
+            razorpay_order_id, 
+            razorpay_payment_id, 
+            razorpay_signature,
+            key_secret  // Key secret from frontend for verification
+        } = req.body;
+
+        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !key_secret) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required fields (order_id, payment_id, signature, key_secret)'
             });
         }
 
-        // Initialize Razorpay with your live keys
-        // Initialize Razorpay
-        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials();
-        if (!keyId || !keySecret) {
-            throw new Error('Razorpay credentials not configured');
-        }
+        // Create signature string
+        const body = razorpay_order_id + '|' + razorpay_payment_id;
 
-        // Fetch payment details directly from Razorpay API [citation:8]
-        const payment = await razorpay.payments.fetch(paymentId);
-        
-        // Check if payment exists and is successful [citation:3][citation:6]
-        if (payment && (payment.status === 'captured' || payment.status === 'authorized')) {
+        // Generate expected signature using provided key_secret
+        const expectedSignature = crypto
+            .createHmac('sha256', key_secret)
+            .update(body.toString())
+            .digest('hex');
+
+        // Compare signatures
+        const isValid = expectedSignature === razorpay_signature;
+
+        if (isValid) {
+            console.log(`✅ Payment verified for order: ${razorpay_order_id}`);
             
-            // You can also fetch additional details like customer info [citation:4]
-            // But payment.fetch already includes most details
+            // Store payment mapping
+            linkToPaymentMap[razorpay_order_id] = razorpay_payment_id;
             
             res.json({
                 success: true,
-                payment: {
-                    id: payment.id,
-                    amount: payment.amount,
-                    currency: payment.currency,
-                    status: payment.status,
-                    method: payment.method,
-                    email: payment.email,
-                    contact: payment.contact,
-                    created_at: payment.created_at
-                }
+                message: 'Payment verified successfully',
+                payment_id: razorpay_payment_id
             });
         } else {
-            res.status(404).json({ 
-                success: false, 
-                error: 'Payment not found or not successful' 
-            });
-        }
-    } catch (error) {
-        console.error('❌ Razorpay verification error:', error);
-        
-        // Handle specific Razorpay errors [citation:8]
-        if (error.statusCode === 400) {
-            res.status(400).json({ 
-                success: false, 
-                error: 'Invalid payment ID' 
-            });
-        } else {
-            res.status(500).json({ 
-                success: false, 
-                error: error.message || 'Failed to verify payment' 
-            });
-        }
-    }
-});
-// ============================================
-// Verify payment endpoint
-// ============================================
-app.post('/api/verify-payment', (req, res) => {
-    try {
-        console.log('🔍 Verify payment from:', req.headers.origin);
-        
-        const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
-        
-        // Initialize Razorpay
-        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials();
-
-        if (!keyId || !keySecret) {
-            throw new Error('Razorpay credentials not configured');
-        }
-
-        const body = razorpay_order_id + '|' + razorpay_payment_id;
-        const expectedSignature = crypto
-            .createHmac('sha256', keySecret)
-            .update(body)
-            .digest('hex');
-
-        const isValid = expectedSignature === razorpay_signature;
-        
-        // Set CORS headers
-        res.header('Access-Control-Allow-Origin', req.headers.origin);
-        res.header('Access-Control-Allow-Credentials', 'true');
-        
-        if (isValid) {
-            console.log('✅ Payment verified:', razorpay_payment_id);
-            res.json({ 
-                success: true, 
-                payment_id: razorpay_payment_id 
-            });
-        } else {
-            console.log('❌ Invalid signature');
-            res.status(400).json({ 
-                success: false, 
-                error: 'Invalid signature' 
-            });
-        }
-    } catch (error) {
-        console.error('❌ Verification error:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message 
-        });
-    }
-});
-// ============================================
-// Optional: Endpoints for fetching details (still using server keys)
-// ============================================
-
-app.post('/api/order-details', async (req, res) => {
-    try {
-        const { order_id } = req.body;
-        
-        if (!order_id) {
-            return res.status(400).json({
+            console.log('❌ Invalid payment signature');
+            res.status(400).json({
                 success: false,
-                error: 'order_id is required'
+                error: 'Invalid signature'
             });
         }
 
-        const mode = process.env.RAZORPAY_MODE || 'test';
-        const instance = mode === 'production' ? razorpay : (razorpayTest || razorpay);
-        
-        // Fetch order from Razorpay
-        const order = await instance.orders.fetch(order_id);
-        
-        // Only return safe fields
-        res.json({
-            success: true,
-            order: {
-                id: order.id,
-                amount: order.amount,
-                currency: order.currency,
-                status: order.status,
-                created_at: order.created_at
-            }
-        });
-
     } catch (error) {
-        console.error('❌ Order fetch error:', error);
+        console.error('❌ Payment verification error:', error);
         res.status(500).json({
             success: false,
             error: error.message
@@ -1141,47 +412,7 @@ app.post('/api/order-details', async (req, res) => {
     }
 });
 
-// Similar for payment details - use server keys, never accept from client
-app.post('/api/payment-details', async (req, res) => {
-    try {
-        const { payment_id } = req.body;
-        
-        if (!payment_id) {
-            return res.status(400).json({
-                success: false,
-                error: 'payment_id is required'
-            });
-        }
-
-        const mode = process.env.RAZORPAY_MODE || 'test';
-        const instance = mode === 'production' ? razorpay : (razorpayTest || razorpay);
-        
-        const payment = await instance.payments.fetch(payment_id);
-        
-        // Only return safe fields
-        res.json({
-            success: true,
-            payment: {
-                id: payment.id,
-                amount: payment.amount,
-                currency: payment.currency,
-                status: payment.status,
-                method: payment.method,
-                created_at: payment.created_at
-                // DON'T send sensitive data like bank details, card numbers, etc.
-            }
-        });
-
-    } catch (error) {
-        console.error('❌ Payment fetch error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-/* // ============================================
+// ============================================
 // NEW ENDPOINT: Fetch Order Details (with credentials in payload)
 // ============================================
 app.post('/api/order', async (req, res) => {
@@ -1255,7 +486,7 @@ app.post('/api/payment', async (req, res) => {
             error: error.message
         });
     }
-}); */
+});
 
 // ============================================
 // Webhook Endpoint (with credentials in payload)
@@ -1365,11 +596,8 @@ app.post('/webhooktest', async (req, res) => {
             };
 
             // Save to storage
-            
-            console.log('💰 About to save payment:', paymentId);
             const saved = await savePayment(paymentId, paymentData);
-            console.log('✅ Save result:', saved ? 'success' : 'failed');
-
+            
             const processingTime = Date.now() - startTime;
             console.log(`✅ Processed ${paymentId} in ${processingTime}ms`);
 
@@ -1611,13 +839,11 @@ app.post('/webhook', async (req, res) => {
         
     } catch (error) {
         console.error('❌ Webhook error:', error.message);
-        console.error(error?.stack || error || 'Unknown error');
+        console.error(error.stack);
         return res.send(errorHtml);
     }
 });
 
-// THEN add your other middleware
-app.use(express.json({ limit: '1mb' }));
 
 // Get payment details using Payment Page ID
 app.get('/api/payment-by-page/:pageId', async (req, res) => {
@@ -1691,126 +917,6 @@ app.post('/api/find-payment-by-ua', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
-
-app.get('/verify/:code', async (req, res) => {
-    const { code } = req.params;
-    const dbPath = path.join(__dirname, 'payment.json');
-    
-    try {
-      const content = await fs.readFile(dbPath, 'utf8');
-      const data = JSON.parse(content);
-      
-      // Check if code exists
-      if (data[code] && !data[code].used) {
-        // Mark as used (optional - for one-time use)
-        data[code].used = true;
-        data[code].accessedAt = new Date().toISOString();
-        await fs.writeFile(dbPath, JSON.stringify(data, null, 2));
-        
-        // Return success with WhatsApp link
-        res.json({
-          valid: true,
-          paymentId: data[code].paymentId,
-          whatsappLink: data[code].whatsappLink
-        });
-      } else if (data[code] && data[code].used) {
-        res.json({
-          valid: false,
-          message: 'This link has already been used'
-        });
-      } else {
-        res.json({
-          valid: false,
-          message: 'Invalid access code'
-        });
-      }
-    } catch (err) {
-      res.status(500).json({ valid: false, message: 'Server error' });
-    }
-  });
-// Webhook endpoint - modify your existing payment success handler
-app.post('/webhook/payment-success', async (req, res) => {
-    const { paymentId, email, amount } = req.body;
-    
-    // Your existing payment verification logic
-    const isValid = await verifyPayment(paymentId);
-    
-    if (isValid) {
-      // Generate unique access code
-      const accessCode = generateAccessCode();
-      await storeAccessCode(paymentId, accessCode);
-      
-      // Return the obfuscated link
-      const joinLink = `https://innershiftnirvaana.github.io/innershiftnirvaana-repo/join?code=${accessCode}`;
-      
-      // Send to user (email or direct response)
-      res.json({
-        success: true,
-        joinLink: joinLink,
-        message: 'Use this link to access the group'
-      });
-    }
-  });
-// On payment success page
-app.get('/payment-success-access-code', async (req, res) => {
-    const paymentId = req.query.payment_id;
-    
-    // 1. Generate unique, random code
-    const accessCode = crypto.randomBytes(8).toString('hex'); // 16 chars, hex
-    
-    // 2. Create signed payload
-    const payload = {
-      paymentId: paymentId,
-      whatsappLink: 'https://chat.whatsapp.com/realgroup123',
-      created: Date.now(),
-      maxClicks: 1
-    };
-    
-    // 3. Encrypt it (optional but maximum security)
-    const encrypted = encryptPayload(payload, SECRET_KEY);
-    
-    // 4. Store in database
-    await db.save({
-      code: accessCode,
-      data: encrypted,
-      used: false,
-      expires: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
-    });
-    
-    // 5. Give user this beautiful, obfuscated link
-    const finalLink = `https://join.yourdomain.com/${accessCode}`;
-    // Looks like: https://join.yourdomain.com/a1b2c3d4e5f67890
-    
-    res.send(`
-      <h2>Payment Successful!</h2>
-      <p>Your private group link:</p>
-      <a href="${finalLink}">${finalLink}</a>
-      <p>This link expires in 7 days or after first use.</p>
-    `);
-  });
-  
-  // Handle the access link
-  app.get('/join/:code', async (req, res) => {
-    const { code } = req.params;
-    
-    // Look up in database
-    const record = await db.findByCode(code);
-    
-    if (!record || record.used || record.expires < Date.now()) {
-      return res.status(404).send('Invalid or expired link');
-    }
-    
-    // Mark as used (for one-time links)
-    await db.markAsUsed(code);
-    
-    // Log the access with payment ID
-    console.log(`Payment ${record.paymentId} accessed link at ${new Date()}`);
-    
-    // Decrypt and redirect
-    const payload = decryptPayload(record.data, SECRET_KEY);
-    res.redirect(payload.whatsappLink);
-  });
-
 app.post('/payment-success', async (req, res) => {
     try {
         const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
@@ -1889,7 +995,7 @@ app.get('/payment-success', async (req, res) => {
 
 // Add this endpoint to get recent payments
 // Replace your recent-payments endpoint with:
-app.get('/recent-payments', async (req, res) => {
+app.get('/api/recent-payments', async (req, res) => {
     try {
         console.log('📊 Recent payments requested');
         console.log('Origin:', req.headers.origin);
@@ -1938,81 +1044,6 @@ app.get('/recent-payments', async (req, res) => {
     }
 });
 
-app.get('/api/recent-payments', (req, res) => {
-    res.redirect('/recent-payments');
-});
-// Add this temporary debug endpoint
-app.get('/debug-payments', async (req, res) => {
-    try {
-        console.log('🔍 Debug payments endpoint called');
-        
-        // Check if payments file exists
-        const fileExists = await fs.access(PAYMENTS_FILE).then(() => true).catch(() => false);
-        
-        let fileContent = null;
-        let paymentCount = 0;
-        let payments = {};
-        
-        if (fileExists) {
-            try {
-                const data = await fs.readFile(PAYMENTS_FILE, 'utf8');
-                payments = JSON.parse(data);
-                paymentCount = Object.keys(payments).length;
-                fileContent = payments;
-            } catch (readError) {
-                console.error('❌ Error reading payments file:', readError.message);
-            }
-        }
-        
-        res.json({
-            success: true,
-            paymentsFile: PAYMENTS_FILE,
-            fileExists,
-            paymentCount,
-            payments: fileContent,
-            localStorage: {
-                repoCacheExists: await fs.access(LOCAL_REPO_PATH).then(() => true).catch(() => false),
-                repoCachePath: LOCAL_REPO_PATH
-            }
-        });
-    } catch (error) {
-        console.error('❌ Debug endpoint error:', error);
-        res.status(500).json({ 
-            success: false, 
-            error: error.message 
-        });
-    }
-});
-app.get('/debug-webhook-status', async (req, res) => {
-    try {
-        // Check if payments file exists and has content
-        const fileExists = await fs.access(PAYMENTS_FILE).then(() => true).catch(() => false);
-        let fileContent = {};
-        let paymentCount = 0;
-        
-        if (fileExists) {
-            try {
-                const data = await fs.readFile(PAYMENTS_FILE, 'utf8');
-                fileContent = JSON.parse(data);
-                paymentCount = Object.keys(fileContent).length;
-            } catch (e) {
-                console.error('Error reading file:', e);
-            }
-        }
-        
-        // Also check your in-memory cache
-        res.json({
-            paymentsFile: PAYMENTS_FILE,
-            fileExists,
-            paymentCount,
-            fileContent,
-            cacheSize: paymentsCache ? Object.keys(paymentsCache).length : 0,
-            cacheContent: paymentsCache
-        });
-    } catch (error) {
-        res.json({ error: error.message });
-    }
-});
 // Verify payment endpoint
 app.get('/verify/:paymentId', async (req, res) => {
     try {
@@ -2160,263 +1191,6 @@ app.get('/debug/check-file', async (req, res) => {
     }
 });
 
-// ============================================
-// server-side-options.js - Complete Options Package Handler
-// ============================================
-app.post('/api/get-checkout-options', async (req, res) => {
-    try {
-    // Prevent caching
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-        const { 
-            amount, 
-            fullname, 
-            email, 
-            phone,
-            currency = 'INR',
-            description = 'Addiction Healing Workshop',
-            themeColor = '#667eea'
-        } = req.body;
-
-        // Validate required fields
-        if (!amount || amount <= 0) {
-            return res.status(400).json({
-                success: false,
-                error: 'Invalid amount'
-            });
-        }
-
-        if (!fullname || !email || !phone) {
-            return res.status(400).json({
-                success: false,
-                error: 'Customer details (name, email, phone) are required'
-            });
-        }
-
-        console.log('📦 Generating checkout options for:', { fullname, email, amount });
-
-        // Initialize Razorpay
-        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials();
-
-        if (!keyId || !keySecret) {
-            throw new Error('Razorpay credentials not configured');
-        }
-
-        // 2. Create order first (order_id is required for checkout)
-        const orderOptions = {
-            amount: amount * 100, // Convert to paise
-            currency: currency,
-            receipt: `receipt_${Date.now()}`,
-            payment_capture: 1,
-            notes: {
-                purpose: description,
-                fullname: fullname,
-                email: email,
-                phone: phone,
-                created_at: new Date().toISOString()
-            }
-        };
-
-        console.log('🔄 Creating Razorpay order...');
-        const order = await razorpay.orders.create(orderOptions);
-        console.log('✅ Order created:', order.id);
-
-        // 4. Build the complete options package
-        const checkoutOptions = {
-            key: keyId,
-            amount: order.amount,
-            currency: order.currency,
-            name: 'Inner Shift Nirvaana',
-            description: description,
-            order_id: order.id,
-            prefill: {
-                name: fullname,
-                email: email,
-                contact: phone
-            },
-            notes: {
-                purpose: description,
-                fullname: fullname,
-                email: email,
-                phone: phone,
-                order_id: order.id
-            },
-            theme: {
-                color: themeColor
-            },
-            // Add any additional Razorpay options here
-            modal: {
-                confirm_close: true, // Ask before closing
-                ondismiss: {
-                    // This will be handled on frontend
-                }
-            },
-            retry: {
-                enabled: true,
-                max_count: 3
-            },
-            remember_customer: true,
-            send_sms_hash: true,
-            callback_url: `${req.protocol}://${req.get('host')}/api/payment-callback`,
-            redirect: false
-        };
-
-        // 5. Also create a frontend handler function as string
-        // (This is optional - you can let frontend define its own handler)
-        const handlerFunction = `
-            function(response) {
-                fetch('/api/payment-success', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        razorpay_payment_id: response.razorpay_payment_id,
-                        razorpay_order_id: response.razorpay_order_id,
-                        razorpay_signature: response.razorpay_signature,
-                        customer: ${JSON.stringify({ fullname, email, phone })}
-                    })
-                })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) {
-                        window.location.href = '/success.html?payment_id=' + response.razorpay_payment_id;
-                    } else {
-                        alert('Payment verification failed');
-                    }
-                });
-            }
-        `;
-
-        // 6. Return the complete package
-        res.json({
-            success: true,
-            checkout_options: checkoutOptions,
-            // Also return individual values if needed
-            key_id: keyId,
-            order_id: order.id,
-            amount: order.amount,
-            currency: order.currency,
-            // For backward compatibility
-            legacy: {
-                key: keyId,
-                order_id: order.id
-            }
-        });
-
-    } catch (error) {
-        console.error('❌ Failed to generate checkout options:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message || 'Failed to initialize payment'
-        });
-    }
-});
-// ============================================
-// PAYMENT CALLBACK ENDPOINT
-// Receives POST from Razorpay after payment
-// ============================================
-app.post('/api/payment-callback', async (req, res) => {
-    try {
-        const { 
-            razorpay_payment_id, 
-            razorpay_order_id, 
-            razorpay_signature 
-        } = req.body;
-        
-        console.log('📞 Payment callback received:', {
-            payment_id: razorpay_payment_id,
-            order_id: razorpay_order_id
-        });
-        
-        // Verify the signature (same as your verify endpoint)
-        // Initialize Razorpay
-        const { razorpay, keyId, keySecret, isProduction, isReady } = getRazorPayCredentials();
-
-        if (!keyId || !keySecret) {
-            throw new Error('Razorpay credentials not configured');
-        }
-        const body = razorpay_order_id + '|' + razorpay_payment_id;
-        const expectedSignature = crypto
-            .createHmac('sha256', keySecret)
-            .update(body)
-            .digest('hex');
-        
-        const isValid = expectedSignature === razorpay_signature;
-        
-        if (isValid) {
-            // Update your database
-            await updatePaymentStatus(razorpay_payment_id, 'success');
-            
-            // Redirect to success page or return JSON
-            res.redirect(`https://your-site.com/success?payment_id=${razorpay_payment_id}`);
-        } else {
-            res.status(400).send('Invalid signature');
-        }
-    } catch (error) {
-        console.error('❌ Callback error:', error);
-        res.status(500).send('Server error');
-    }
-});
-// ============================================
-// Payment Success Handler (called by frontend)
-// ============================================
-app.post('/api/payment-success', async (req, res) => {
-    try {
-        const { 
-            razorpay_payment_id, 
-            razorpay_order_id, 
-            razorpay_signature,
-            customer 
-        } = req.body;
-
-        // Verify payment signature
-        const crypto = require('crypto');
-        // Initialize Razorpay
-        const { razorpay, keyId, secret, isProduction, isReady } = getRazorPayCredentials();
-
-        if (!keyId || !secret) {
-            throw new Error('Razorpay credentials not configured');
-        }
-
-        const body = razorpay_order_id + '|' + razorpay_payment_id;
-        const expectedSignature = crypto
-            .createHmac('sha256', secret)
-            .update(body.toString())
-            .digest('hex');
-
-        if (expectedSignature !== razorpay_signature) {
-            return res.status(400).json({
-                success: false,
-                error: 'Invalid signature'
-            });
-        }
-
-        // Payment is verified - save to database
-        console.log('✅ Payment verified:', razorpay_payment_id);
-        
-        // Store payment in your database
-        // await savePayment({ razorpay_payment_id, razorpay_order_id, customer });
-
-        res.json({
-            success: true,
-            payment_id: razorpay_payment_id,
-            message: 'Payment verified successfully'
-        });
-
-    } catch (error) {
-        console.error('❌ Payment success handler error:', error);
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// Add a simple keep-alive endpoint
-app.get('/ping', (req, res) => {
-    res.json({ status: 'alive', time: new Date().toISOString() });
-});
-
 // Graceful shutdown
 async function gracefulShutdown(signal) {
     console.log(`\n${signal} received - shutting down gracefully`);
@@ -2434,105 +1208,37 @@ async function gracefulShutdown(signal) {
     }, 10000);
 }
 
-
-// Just before the catch-all, add:
-console.log('📋 Registered routes:');
-app._router.stack.forEach(layer => {
-    if (layer.route) {
-        console.log(`   ${Object.keys(layer.route.methods)} ${layer.route.path}`);
-    }
+// Error handling for uncaught exceptions
+process.on('uncaughtException', (error) => {
+    console.error('🔥 Uncaught Exception:', error);
+    console.error(error.stack);
+    // Keep running - don't crash on errors
 });
 
-// Just before the catch-all, add:
-console.log('📋 Registered routes:');
-app._router.stack.forEach(layer => {
-    if (layer.route) {
-        console.log(`   ${Object.keys(layer.route.methods)} ${layer.route.path}`);
-    }
-});
-// SINGLE CORS middleware (manual version)
-app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    
-    // Function to check if origin is allowed
-    const isOriginAllowed = (originToCheck) => {
-        if (!originToCheck) return false;
-        
-        return allowedOrigins.some(allowed => {
-            if (allowed instanceof RegExp) {
-                return allowed.test(originToCheck);
-            }
-            if (typeof allowed === 'string' && allowed.includes('*')) {
-                const pattern = allowed.replace(/\*/g, '.*');
-                return new RegExp(pattern).test(originToCheck);
-            }
-            // Special case for localhost
-            if (originToCheck.includes('localhost') && allowed.includes('localhost')) {
-                return true;
-            }
-            return allowed === originToCheck;
-        });
-    };
-    
-    // Set CORS headers if origin is allowed
-    if (origin && isOriginAllowed(origin)) {
-        res.header('Access-Control-Allow-Origin', origin);
-        res.header('Access-Control-Allow-Credentials', 'true');
-        res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-        res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-        res.header('Access-Control-Max-Age', '86400');
-        
-        // Handle preflight
-        if (req.method === 'OPTIONS') {
-            console.log('🔄 Preflight request from:', origin);
-            return res.status(200).end();
-        }
-    }
-    
-    next();
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('🔥 Unhandled Rejection at:', promise);
+    console.error('Reason:', reason);
 });
 
+// Shutdown handlers
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Initialize and start server
 // Initialize and start server
 async function startServer() {
     try {
         // Force /tmp if writable is false
-/*         try {
+        try {
             await fs.access('/tmp', fs.constants.W_OK);
             PAYMENTS_FILE = '/tmp/payments.json';
             LOG_FILE = '/tmp/webhook.log';
             console.log(`📁 Using /tmp for storage`);
         } catch (e) {
             console.error('❌ Even /tmp is not writable!');
-        }      */   
-
-
-        try{
-            // Initialize GitHub storage
-            // Create repo directory
-            await fs.mkdir(LOCAL_REPO_PATH, { recursive: true });
-            
-            // Initialize GitHub storage
-            const GITHUB_READY = await initGitStorage();
-            if (GITHUB_READY) {
-                console.log('✅ GitHub storage ready');
-            } else {
-                console.log('⚠️ Running with local storage only');
-            }
-            
-            // Load payments
-            const payments = await loadPayments();
-            paymentsCache = payments;
-            lastCacheUpdate = Date.now();
-            
-            console.log(`✅ Loaded ${Object.keys(payments).length} existing payments`);
-            
-        } catch (e) {
-            console.error('❌ failed to initialize github storage:', e.message);
-        }   
+        }        
         
-/*         // After forcing /tmp, test writability
+        // After forcing /tmp, test writability
         try {
             await fs.access('/tmp', fs.constants.W_OK);
             console.log('✅ /tmp is writable');
@@ -2569,37 +1275,15 @@ async function startServer() {
         lastCacheUpdate = Date.now();
         
         console.log(`✅ Loaded ${Object.keys(payments).length} existing payments`);
-         */
         
         // Start server
-        const server = app.listen(PORT, "0.0.0.0", () => {
+        const server = app.listen(PORT, () => {
             console.log(`🚀 Webhook server running on port ${PORT}`);
             console.log(`📁 Payments file: ${PAYMENTS_FILE}`);
             //console.log(`🔐 Webhook secret: ${WEBHOOK_SECRET ? 'configured' : 'NOT SET'}`);
             console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
         });
-
-        // ===== ADD KEEP-ALIVE CODE HERE =====
-        // Ping the server every minute to keep the connection alive
-        setInterval(() => {
-            const http = require('http');
-            http.get(`http://localhost:${PORT}/ping`, (res) => {
-                console.log('💓 Keep-alive ping sent');
-            }).on('error', (err) => {
-                // Ignore errors - server might be starting
-            });
-        }, 60000); // 60 seconds
         
-        // Also add a simple ping endpoint
-        app.get('/ping', (req, res) => {
-            res.json({ 
-                status: 'alive', 
-                time: new Date().toISOString(),
-                uptime: process.uptime()
-            });
-        });
-        // ===== END KEEP-ALIVE CODE =====
-
         // Export server for graceful shutdown
         global.server = server;
         
