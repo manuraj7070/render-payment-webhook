@@ -52,7 +52,7 @@ let GITHUB_READY = false;
 // Error handling for uncaught exceptions
 process.on('uncaughtException', (error) => {
     console.error('🔥 Uncaught Exception:', error);
-    console.error(error.stack);
+    console.error(error?.stack || error || 'Unknown error');
     // Keep running - don't crash on errors
 });
 
@@ -1611,7 +1611,7 @@ app.post('/webhook', async (req, res) => {
         
     } catch (error) {
         console.error('❌ Webhook error:', error.message);
-        console.error(error.stack);
+        console.error(error?.stack || error || 'Unknown error');
         return res.send(errorHtml);
     }
 });
