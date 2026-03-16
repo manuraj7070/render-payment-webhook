@@ -68,7 +68,7 @@ console.log('RAZORPAY_TEST_KEY_ID present:', !!process.env.RAZORPAY_TEST_KEY_ID)
 console.log('RAZORPAY_TEST_KEY_SECRET present:', !!process.env.RAZORPAY_TEST_KEY_SECRET);
 console.log('RAZORPAY_LIVE_KEY_ID present:', !!process.env.RAZORPAY_LIVE_KEY_ID);
 console.log('RAZORPAY_LIVE_KEY_SECRET present:', !!process.env.RAZORPAY_LIVE_KEY_SECRET);
-console.log('ALL env vars:', Object.keys(process.env).filter(key => key.includes('RAZORPAY')).join(', '));
+//console.log('ALL env vars:', Object.keys(process.env).filter(key => key.includes('RAZORPAY')).join(', '));
 
 const razorpay = new Razorpay({
     key_id: process.env.RAZORPAY_LIVE_KEY_ID,
