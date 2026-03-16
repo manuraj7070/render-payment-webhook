@@ -6,7 +6,10 @@
   "scripts": {
     "start": "node server.js",
     "railway-start": "node server.js",
-    "build": "apt-get update && apt-get install -y git || true"
+    "build": "apt-get update && apt-get install -y git || true",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage"
   },
   "keywords": [],
   "author": "",
@@ -24,6 +27,8 @@
     "simple-git": "^3.33.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "jest": "^30.3.0",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.2.2"
   }
 }
