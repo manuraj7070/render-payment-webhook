@@ -3,7 +3,12 @@ const app = express();
 
 // ✅ CRITICAL FIX: Use Railway's PORT environment variable
 const PORT = process.env.PORT || 8080;  // Railway assigns 8080, not 3000
-
+console.log('🔥 RAILWAY DIAGNOSTIC START');
+console.log('📌 Process ID:', process.pid);
+console.log('📌 Platform:', process.platform);
+console.log('📌 Node version:', process.version);
+console.log('📌 Memory usage:', process.memoryUsage());
+console.log('📌 Uptime:', process.uptime());
 console.log('🔥 DEBUG: Server starting...');
 console.log('📌 Railway PORT env:', process.env.PORT);
 console.log('📌 Using PORT:', PORT);
@@ -39,15 +44,27 @@ app.use((req, res) => {
 });
 
 // ✅ Bind to 0.0.0.0 with Railway's PORT
+
+// Add after server starts
 const server = app.listen(PORT, '0.0.0.0', () => {
     console.log('='.repeat(50));
     console.log(`✅ SERVER STARTED SUCCESSFULLY`);
-    console.log(`📡 Port: ${PORT} (from env: ${process.env.PORT})`);
+    console.log(`📡 Port: ${PORT}`);
+    console.log(`📡 Host: 0.0.0.0`);
+    console.log(`📡 Process ID: ${process.pid}`);
     console.log(`🔗 Health: http://0.0.0.0:${PORT}/health`);
-    console.log(`🔗 Webhook: http://0.0.0.0:${PORT}/webhook (POST)`);
+    
+    // List all network interfaces
+    const os = require('os');
+    const nets = os.networkInterfaces();
+    console.log('📡 Network interfaces:');
+    for (const name of Object.keys(nets)) {
+        for (const net of nets[name]) {
+            console.log(`   ${name}: ${net.address} (${net.family})`);
+        }
+    }
     console.log('='.repeat(50));
 });
-
 // Error handling
 server.on('error', (err) => {
     console.error('❌ Server error:', err);
