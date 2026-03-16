@@ -65,6 +65,11 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     }
     console.log('='.repeat(50));
 });
+// Force a periodic health check log
+setInterval(() => {
+    console.log(`💓 Server still alive at ${new Date().toISOString()}, listening on port ${PORT}`);
+    console.log(`💓 Memory: ${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`);
+}, 10000);  // Log every 10 seconds
 // Error handling
 server.on('error', (err) => {
     console.error('❌ Server error:', err);
